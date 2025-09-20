@@ -1,0 +1,8 @@
+{
+  "initial_delay": 5.0,
+  "f1_delay": 1.0,
+  "first_a_delay": 0.8,
+  "analysis_delay": 5.5,
+  "retry_count": 2,
+  "retry_interval": 2.0
+}
