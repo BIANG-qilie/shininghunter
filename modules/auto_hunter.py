@@ -66,8 +66,8 @@ class AutoHunter:
         if not self._check_requirements():
             return False
         
-        # 重置计数器
-        self.hunt_count = 0
+        # 不自动重置计数器，由GUI控制
+        # self.hunt_count = 0  # 注释掉自动重置
         self.is_hunting = True
         
         # 启动刷闪线程
@@ -169,7 +169,7 @@ class AutoHunter:
                         if not self.keyboard_controller.confirm_action():
                             self._handle_error("确认键失败")
                             return
-                        self._wait_with_cancel(delay, f"确认后等待 - {description}")
+                        self._wait_with_cancel(delay, f"{description}")
                     elif action_type == 'analysis':
                         # 进行区域截图分析
                         analysis_result = self._analyze_regions()

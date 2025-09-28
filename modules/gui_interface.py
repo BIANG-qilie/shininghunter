@@ -36,6 +36,12 @@ class MainGUI:
         self.is_capturing = False
         self.analysis_results = []
         
+        # 刷闪次数重置标志
+        self.should_reset_count = False  # 默认需要重置，只有在导入暂停信息时才设为False
+        
+        # 用户偏好配置
+        self.user_preferences = self._load_user_preferences()
+        
         # 概率计算器
         self.probability_calculator = ProbabilityCalculator()
         
@@ -569,7 +575,7 @@ class MainGUI:
     def create_settings_tab(self):
         """创建设置标签页"""
         settings_frame = ttk.Frame(self.notebook)
-        self.notebook.add(settings_frame, text="设置")
+        self.notebook.add(settings_frame, text="阈值设置")
         
         # 阈值设置
         threshold_frame = ttk.LabelFrame(settings_frame, text="分析阈值设置")
@@ -667,15 +673,18 @@ class MainGUI:
             messagebox.showerror("错误", "时间轴配置不能为空")
             return
         
-        # 检查是否处于暂停状态
-        if self.is_paused:
-            # 暂停状态，不清零刷闪次数
-            self.log_message("从暂停状态继续刷闪，保持当前刷闪次数")
-        else:
-            # 非暂停状态，清零刷闪次数
-            self.app.auto_hunter.reset_counter()
-            self.hunt_count_var.set("0")
+        # 检查是否应该重置刷闪次数
+        # 只有在停止刷闪或确认闪光后才重置，其他情况都保持当前次数
+        if hasattr(self, 'should_reset_count') and self.should_reset_count:
+            # 需要重置刷闪次数
+            self.reset_hunt_count()
+            self.should_reset_count = False
             self.log_message("开始新的刷闪，刷闪次数已清零")
+        else:
+            # 保持当前刷闪次数，确保auto_hunter的计数器与界面同步
+            current_count = int(self.hunt_count_var.get())
+            self.set_hunt_count(current_count)  # 使用统一方法确保同步
+            self.log_message("继续刷闪，保持当前刷闪次数")
         
         # 验证重试配置
         try:
@@ -829,6 +838,8 @@ class MainGUI:
         self.stop_countdown()
         # 清除暂停标志
         self.is_paused = False
+        # 设置下次开始刷闪时重置计数器
+        self.should_reset_count = True
         self.log_message("停止自动刷闪")
     
     def reset_hunt_count(self):
@@ -836,6 +847,60 @@ class MainGUI:
         self.app.auto_hunter.reset_counter()
         self.hunt_count_var.set("0")
         self.log_message("刷闪计数已重置")
+    
+    def set_hunt_count(self, count):
+        """统一设置刷闪次数（同时更新界面显示和内部计数器）"""
+        self.hunt_count_var.set(str(count))
+        self.app.auto_hunter.hunt_count = count
+        self.log_message(f"刷闪次数已设置为: {count}")
+    
+    def _load_user_preferences(self):
+        """加载用户偏好配置"""
+        try:
+            import json
+            import os
+            prefs_file = "configs/user_preferences.json"
+            if os.path.exists(prefs_file):
+                with open(prefs_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                # 返回默认配置
+                return {
+                    "last_folder_import_path": "",
+                    "last_screenshot_folder": "",
+                    "last_export_path": "",
+                    "last_import_path": "",
+                    "window_geometry": "1000x960",
+                    "last_generation": "6",
+                    "last_judgment_count": "1",
+                    "last_screenshot_save_path": "",
+                    "last_reference_image_path": "",
+                    "last_threshold_save_path": "",
+                    "last_threshold_load_path": "",
+                    "last_region_save_path": "",
+                    "last_region_load_path": "",
+                    "last_shiny_mark_path": ""
+                }
+        except Exception as e:
+            self.logger.error(f"加载用户偏好失败: {e}")
+            return {}
+    
+    def _save_user_preferences(self):
+        """保存用户偏好配置"""
+        try:
+            import json
+            import os
+            os.makedirs("configs", exist_ok=True)
+            prefs_file = "configs/user_preferences.json"
+            with open(prefs_file, 'w', encoding='utf-8') as f:
+                json.dump(self.user_preferences, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.logger.error(f"保存用户偏好失败: {e}")
+    
+    def _update_preference(self, key, value):
+        """更新用户偏好"""
+        self.user_preferences[key] = value
+        self._save_user_preferences()
     
     
     
@@ -1182,13 +1247,12 @@ class MainGUI:
             dialog = dialog_or_result
             dialog.destroy()
         
-        failed_regions = result.get('failed_regions', [])
+        total_count = result.get('total_regions', 0)
         
         # 更新刷闪次数：维持当前次数，加上失败区域数（这些是错判的案例）
         current_count = int(self.hunt_count_var.get())
-        failed_count = len(failed_regions)  # 失败区域数量
-        new_count = current_count + failed_count
-        self.hunt_count_var.set(str(new_count))
+        new_count = current_count + total_count
+        self.set_hunt_count(new_count)
         
         # 更新概率显示
         self._update_probability_display()
@@ -1197,7 +1261,7 @@ class MainGUI:
         if hasattr(self.app, 'auto_hunter') and self.app.auto_hunter:
             self.app.auto_hunter.continue_hunting()
         
-        self.log_message(f"错判处理：维持刷闪次数 {current_count}，加上错判区域 {failed_count}，继续刷闪")
+        self.log_message(f"错判处理：维持刷闪次数 {current_count}，加上正常判断区域以及错判区域 {total_count}，继续刷闪")
     
     def _handle_confirm_shiny(self, dialog):
         """确认闪光"""
@@ -1218,6 +1282,9 @@ class MainGUI:
         
         # 保存历史记录到Excel
         self._save_shiny_history()
+        
+        # 设置下次开始刷闪时重置计数器
+        self.should_reset_count = True
         
         dialog.destroy()
         self.log_message("确认检测到闪光宝可梦，自动刷闪已停止！")
@@ -1934,11 +2001,12 @@ class MainGUI:
     def export_timeline_config(self):
         """导出时间轴配置"""
         try:
+            last_path = self.user_preferences.get("last_export_path", "configs")
             file_path = filedialog.asksaveasfilename(
                 title="导出时间轴配置",
                 defaultextension=".json",
                 filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")],
-                initialdir="configs"
+                initialdir=last_path
             )
             
             if file_path:
@@ -1953,6 +2021,8 @@ class MainGUI:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(config, f, indent=2, ensure_ascii=False)
                 
+                # 保存用户选择的路径
+                self._update_preference("last_export_path", os.path.dirname(file_path))
                 self.log_message(f"时间轴配置已导出: {file_path}")
                 
         except Exception as e:
@@ -1962,10 +2032,11 @@ class MainGUI:
     def import_timeline_config(self):
         """导入时间轴配置"""
         try:
+            last_path = self.user_preferences.get("last_import_path", "configs")
             file_path = filedialog.askopenfilename(
                 title="导入时间轴配置",
                 filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")],
-                initialdir="configs"
+                initialdir=last_path
             )
             
             if file_path:
@@ -2016,6 +2087,8 @@ class MainGUI:
                     description = config.get('description', '无描述')
                     retry_count = config.get('retry_count', '未设置')
                     retry_interval = config.get('retry_interval', '未设置')
+                    # 保存用户选择的路径
+                    self._update_preference("last_import_path", os.path.dirname(file_path))
                     self.log_message(f"时间轴配置已导入: {len(timeline_actions)}个动作, 重试{retry_count}次/{retry_interval}s (导出时间: {export_time})")
                 
         except json.JSONDecodeError:
@@ -2185,15 +2258,18 @@ class MainGUI:
     def folder_import_config(self):
         """从文件夹批量导入配置"""
         try:
-            # 选择文件夹
+            # 选择文件夹（使用上次选择的路径）
+            last_path = self.user_preferences.get("last_folder_import_path", "configs")
             folder_path = filedialog.askdirectory(
                 title="选择配置文件夹",
-                initialdir="configs"
+                initialdir=last_path
             )
             
             if not folder_path:
                 return
             
+            # 保存用户选择的路径
+            self._update_preference("last_folder_import_path", folder_path)
             self.folder_path_var.set(folder_path)
             
             imported_items = []
@@ -2291,8 +2367,9 @@ class MainGUI:
                 
                 # 加载刷闪次数
                 if 'hunt_count' in hunt_data:
-                    self.hunt_count_var.set(str(hunt_data['hunt_count']))
-                    self.app.auto_hunter.hunt_count = hunt_data['hunt_count']
+                    self.set_hunt_count(hunt_data['hunt_count'])
+                    # 设置标志，表示这是从暂停状态恢复，不应该重置计数器
+                    self.should_reset_count = False
                     self.log_message(f"已导入暂停信息: 刷闪次数 {hunt_data['hunt_count']}")
                     imported_items.append("暂停信息")
             
@@ -2459,13 +2536,16 @@ class MainGUI:
         """标记闪光图片"""
         try:
             # 选择要标记为闪光的图片文件
+            last_path = self.user_preferences.get("last_shiny_mark_path", "screenshots")
             file_paths = filedialog.askopenfilenames(
                 title="选择闪光图片",
                 filetypes=[("PNG图片", "*.png"), ("所有文件", "*.*")],
-                initialdir="screenshots"
+                initialdir=last_path
             )
             
             if file_paths:
+                # 保存用户选择的路径
+                self._update_preference("last_shiny_mark_path", os.path.dirname(file_paths[0]))
                 for file_path in file_paths:
                     self.app.screenshot_manager.mark_as_shiny(file_path)
                 
@@ -2497,24 +2577,32 @@ class MainGUI:
             messagebox.showwarning("警告", "没有区域配置可保存")
             return
         
+        last_path = self.user_preferences.get("last_region_save_path", "")
         file_path = filedialog.asksaveasfilename(
             title="保存区域配置",
             defaultextension=".json",
-            filetypes=[("JSON文件", "*.json")]
+            filetypes=[("JSON文件", "*.json")],
+            initialdir=last_path
         )
         
         if file_path:
+            # 保存用户选择的路径
+            self._update_preference("last_region_save_path", os.path.dirname(file_path))
             self.app.screenshot_manager.save_regions_config(file_path)
             self.log_message(f"区域配置已保存: {file_path}")
     
     def load_regions_config(self):
         """加载区域配置"""
+        last_path = self.user_preferences.get("last_region_load_path", "")
         file_path = filedialog.askopenfilename(
             title="加载区域配置",
-            filetypes=[("JSON文件", "*.json")]
+            filetypes=[("JSON文件", "*.json")],
+            initialdir=last_path
         )
         
         if file_path:
+            # 保存用户选择的路径
+            self._update_preference("last_region_load_path", os.path.dirname(file_path))
             self.app.screenshot_manager.load_regions_config(file_path)
             self.update_region_list()
             self.log_message(f"区域配置已加载: {file_path}")
@@ -2522,12 +2610,16 @@ class MainGUI:
     # 图像分析方法
     def load_reference_image(self):
         """加载参考图像"""
+        last_path = self.user_preferences.get("last_reference_image_path", "")
         file_path = filedialog.askopenfilename(
             title="选择参考图像",
-            filetypes=[("图像文件", "*.png *.jpg *.jpeg *.bmp *.gif")]
+            filetypes=[("图像文件", "*.png *.jpg *.jpeg *.bmp *.gif")],
+            initialdir=last_path
         )
         
         if file_path:
+            # 保存用户选择的路径
+            self._update_preference("last_reference_image_path", os.path.dirname(file_path))
             name = f"参考图像_{len(self.app.image_analyzer.get_reference_list()) + 1}"
             success = self.app.image_analyzer.load_reference_image(name, file_path)
             if success:
@@ -2621,24 +2713,32 @@ class MainGUI:
     
     def save_settings(self):
         """保存设置"""
+        last_path = self.user_preferences.get("last_threshold_save_path", "")
         file_path = filedialog.asksaveasfilename(
             title="保存设置",
             defaultextension=".json",
-            filetypes=[("JSON文件", "*.json")]
+            filetypes=[("JSON文件", "*.json")],
+            initialdir=last_path
         )
         
         if file_path:
+            # 保存用户选择的路径
+            self._update_preference("last_threshold_save_path", os.path.dirname(file_path))
             self.app.image_analyzer.save_thresholds(file_path)
             self.log_message(f"设置已保存: {file_path}")
     
     def load_settings(self):
         """加载设置"""
+        last_path = self.user_preferences.get("last_threshold_load_path", "")
         file_path = filedialog.askopenfilename(
             title="加载设置",
-            filetypes=[("JSON文件", "*.json")]
+            filetypes=[("JSON文件", "*.json")],
+            initialdir=last_path
         )
         
         if file_path:
+            # 保存用户选择的路径
+            self._update_preference("last_threshold_load_path", os.path.dirname(file_path))
             self.app.image_analyzer.load_thresholds(file_path)
             # 更新界面显示
             thresholds = self.app.image_analyzer.get_thresholds()
