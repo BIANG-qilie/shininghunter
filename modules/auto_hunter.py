@@ -80,6 +80,15 @@ class AutoHunter:
         
         return True
     
+    def pause_hunting(self):
+        """暂停自动刷闪"""
+        if not self.is_hunting:
+            self.logger.warning("自动刷闪未在运行")
+            return
+        
+        self.is_hunting = False
+        self.logger.info("暂停自动刷闪")
+    
     def stop_hunting(self):
         """停止自动刷闪"""
         if not self.is_hunting:
@@ -145,22 +154,22 @@ class AutoHunter:
                     
                     # 执行动作
                     if action_type == 'initial_delay':
-                        self._wait_with_cancel(delay, "开始刷闪")
+                        self._wait_with_cancel(delay, f"开始刷闪 - {description}")
                     elif action_type == 'reset':
                         if not self.keyboard_controller.reset_action():
                             self._handle_error("重置键失败")
                             return
-                        self._wait_with_cancel(delay, "等待")
+                        self._wait_with_cancel(delay, f"重置后等待 - {description}")
                     elif action_type == 'quick_load':
                         if not self.keyboard_controller.quick_load_save():
                             self._handle_error("快速读取键失败")
                             return
-                        self._wait_with_cancel(delay, "等待")
+                        self._wait_with_cancel(delay, f"快速读取后等待 - {description}")
                     elif action_type == 'confirm':
                         if not self.keyboard_controller.confirm_action():
                             self._handle_error("确认键失败")
                             return
-                        self._wait_with_cancel(delay, "等待")
+                        self._wait_with_cancel(delay, f"确认后等待 - {description}")
                     elif action_type == 'analysis':
                         # 进行区域截图分析
                         analysis_result = self._analyze_regions()
@@ -190,7 +199,7 @@ class AutoHunter:
     def _wait_with_cancel(self, seconds: float, action: str = ""):
         """等待指定时间，支持取消和倒计时显示"""
         if self.on_countdown and action:
-            self.on_countdown(int(seconds), action)
+            self.on_countdown(seconds, action)
         
         start_time = time.time()
         while time.time() - start_time < seconds and self.is_hunting:

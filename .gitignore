@@ -37,11 +37,19 @@ configs/*.json
 configs/*.png
 configs/*.jpg
 
+# 打包文件
+dist/
+build/
+
+# 测试文件
+test/
+
 # 临时文件
 *.tmp
 *.temp
 .DS_Store
 Thumbs.db
+history.xlsx
 
 # 系统文件
 *.exe
