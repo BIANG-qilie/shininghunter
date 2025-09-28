@@ -433,6 +433,7 @@ class ScreenshotManager:
         self.screenshot_regions = []  # 存储截图区域
         self.is_capturing = False
         self.capture_thread = None
+        self.shiny_images = set()  # 存储闪光图片路径
         
         # 创建截图目录
         self.screenshot_dir = Path("screenshots")
@@ -525,10 +526,14 @@ class ScreenshotManager:
             img_array = self.capture_region(region)
             
             if img_array is not None:
+                # 保存图像到文件
+                image_path = self._save_region_image(img_array, region_info['name'], timestamp)
+                
                 result = {
                     'name': region_info['name'],
                     'region': region,
                     'image': img_array,
+                    'image_path': image_path,
                     'timestamp': timestamp,
                     'enabled': region_info['enabled']
                 }
@@ -536,6 +541,29 @@ class ScreenshotManager:
         
         self.logger.info(f"完成 {len(results)} 个区域的截图")
         return results
+    
+    def _save_region_image(self, img_array: np.ndarray, region_name: str, timestamp: float) -> str:
+        """保存区域图像到文件"""
+        try:
+            # 生成文件名
+            time_str = time.strftime("%Y%m%d_%H%M%S", time.localtime(timestamp))
+            filename = f"screenshot_{time_str}_{region_name}.png"
+            filepath = self.screenshot_dir / filename
+            
+            # 直接保存，保持原色（MSS已经提供RGB格式）
+            if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+                # 确保是RGB格式（MSS已经提供RGB）
+                img_pil = Image.fromarray(img_array, 'RGB')
+                img_pil.save(filepath)
+            else:
+                # 灰度图像
+                img_pil = Image.fromarray(img_array)
+                img_pil.save(filepath)
+            
+            return str(filepath)
+        except Exception as e:
+            self.logger.error(f"保存区域图像失败: {e}")
+            return ""
     
     def save_screenshot(self, image_data: np.ndarray, filename: str) -> bool:
         """
@@ -562,6 +590,53 @@ class ScreenshotManager:
         except Exception as e:
             self.logger.error(f"保存截图失败: {e}")
             return False
+    
+    def mark_as_shiny(self, image_path: str):
+        """标记图像为闪光图片（不会被清理）"""
+        self.shiny_images.add(str(image_path))
+        self.logger.info(f"标记为闪光图片: {image_path}")
+    
+    def cleanup_screenshots(self, keep_shiny: bool = True, max_age_hours: int = 24):
+        """
+        清理screenshots文件夹
+        
+        Args:
+            keep_shiny: 是否保留闪光图片
+            max_age_hours: 保留时间（小时）
+        """
+        try:
+            import time
+            current_time = time.time()
+            max_age_seconds = max_age_hours * 3600
+            
+            deleted_count = 0
+            kept_count = 0
+            
+            for file_path in self.screenshot_dir.glob("*.png"):
+                # 检查是否为闪光图片
+                if keep_shiny and str(file_path) in self.shiny_images:
+                    kept_count += 1
+                    continue
+                
+                # 检查文件年龄
+                file_age = current_time - file_path.stat().st_mtime
+                
+                if file_age > max_age_seconds:
+                    try:
+                        file_path.unlink()  # 删除文件
+                        deleted_count += 1
+                        self.logger.info(f"删除过期截图: {file_path.name}")
+                    except Exception as e:
+                        self.logger.error(f"删除文件失败 {file_path}: {e}")
+                else:
+                    kept_count += 1
+            
+            self.logger.info(f"截图清理完成: 删除{deleted_count}个, 保留{kept_count}个")
+            return deleted_count, kept_count
+            
+        except Exception as e:
+            self.logger.error(f"清理截图失败: {e}")
+            return 0, 0
     
     def save_all_screenshots(self, results: List[Dict], prefix: str = "screenshot") -> List[str]:
         """

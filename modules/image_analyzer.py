@@ -238,6 +238,68 @@ class ImageAnalyzer:
         
         return result
     
+    def analyze_image_multi_reference(self, current_image: np.ndarray) -> Dict:
+        """
+        使用多个参考图像分析当前图像，取各项指标的最大值
+        
+        Args:
+            current_image: 当前图像
+            
+        Returns:
+            分析结果字典（各项指标为所有参考图像中的最大值）
+        """
+        if not self.reference_images:
+            self.logger.error("没有可用的参考图像")
+            return {}
+        
+        # 存储所有参考图像的分析结果
+        all_results = []
+        
+        # 与每个参考图像进行比较
+        for reference_name in self.reference_images.keys():
+            result = self.analyze_image(current_image, reference_name)
+            if result:  # 确保分析成功
+                all_results.append(result)
+        
+        if not all_results:
+            self.logger.error("所有参考图像分析都失败")
+            return {}
+        
+        # 取各项指标的最大值
+        max_color_similarity = max(r['color_similarity'] for r in all_results)
+        max_structural_similarity = max(r['structural_similarity'] for r in all_results)
+        max_overall_score = max(r['overall_score'] for r in all_results)
+        
+        # 颜色差异取最小值（越小越好）
+        min_color_difference = min(r['color_difference'] for r in all_results)
+        
+        # 基于综合后的最佳指标进行匹配判断
+        is_match = (
+            max_color_similarity >= self.thresholds['color_similarity'] and
+            max_structural_similarity >= self.thresholds['ssim_threshold'] and
+            min_color_difference <= self.thresholds['color_difference']
+        )
+        
+        # 找到最佳匹配的参考图像
+        best_reference = max(all_results, key=lambda r: r['overall_score'])
+        
+        result = {
+            'reference_name': f"多参考图像({len(all_results)}个)",
+            'best_reference': best_reference['reference_name'],
+            'color_similarity': max_color_similarity,
+            'color_difference': min_color_difference,
+            'structural_similarity': max_structural_similarity,
+            'overall_score': max_overall_score,
+            'is_match': is_match,
+            'thresholds': self.thresholds.copy(),
+            'all_results': all_results  # 包含所有参考图像的详细结果
+        }
+        
+        self.logger.info(f"多参考图像分析完成: 最佳匹配={best_reference['reference_name']}, "
+                        f"综合评分={max_overall_score:.3f}, 匹配={is_match}")
+        
+        return result
+    
     def batch_analyze(self, current_images: List[np.ndarray], reference_name: str) -> List[Dict]:
         """
         批量分析多个图像

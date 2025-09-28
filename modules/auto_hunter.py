@@ -8,6 +8,7 @@
 import time
 import threading
 import logging
+import os
 from typing import List, Dict, Optional, Callable
 from tkinter import messagebox
 
@@ -34,10 +35,7 @@ class AutoHunter:
         
         # 配置参数
         self.config = {
-            'initial_delay': 5.0,      # 初始冷却时间（秒）
-            'f1_delay': 0.5,           # F1后等待时间（秒）
-            'first_a_delay': 0.8,      # 第一次A键后等待时间（秒）
-            'analysis_delay': 4.0,     # 分析前等待时间（秒）
+            'timeline_actions': [],    # 时间轴动作列表
             'retry_count': 2,          # 分析重试次数
             'retry_interval': 2.0,     # 重试间隔时间（秒）
             'reference_image': None,   # 参考图像名称
@@ -49,13 +47,14 @@ class AutoHunter:
         self.logger.info(f"更新自动刷闪配置: {config}")
     
     def set_callbacks(self, on_hunt_start=None, on_hunt_stop=None, 
-                     on_hunt_progress=None, on_hunt_result=None, on_countdown=None):
+                     on_hunt_progress=None, on_hunt_result=None, on_countdown=None, on_analysis_progress=None):
         """设置回调函数"""
         self.on_hunt_start = on_hunt_start
         self.on_hunt_stop = on_hunt_stop
         self.on_hunt_progress = on_hunt_progress
         self.on_hunt_result = on_hunt_result
         self.on_countdown = on_countdown
+        self.on_analysis_progress = on_analysis_progress
     
     def start_hunting(self):
         """开始自动刷闪"""
@@ -97,6 +96,14 @@ class AutoHunter:
         if self.on_hunt_stop:
             self.on_hunt_stop(self.hunt_count)
     
+    def continue_hunting(self):
+        """继续自动刷闪（用于错判处理）"""
+        if not self.is_hunting:
+            self.logger.info("继续自动刷闪")
+            self.is_hunting = True
+            self.hunt_thread = threading.Thread(target=self._hunt_loop, daemon=True)
+            self.hunt_thread.start()
+    
     def _check_requirements(self) -> bool:
         """检查自动刷闪的必要条件"""
         # 检查截图区域
@@ -119,51 +126,59 @@ class AutoHunter:
     def _hunt_loop(self):
         """自动刷闪主循环"""
         try:
-            # 步骤1: 初始冷却
-            self._log_progress("步骤1: 初始冷却5秒，请选择DeSmuME窗口")
-            self._wait_with_cancel(self.config['initial_delay'], "开始刷闪")
+            timeline_actions = self.config.get('timeline_actions', [])
+            if not timeline_actions:
+                self._handle_error("时间轴配置为空")
+                return
             
             while self.is_hunting:
-                # 步骤2: 按下F1读取存档
-                self._log_progress("步骤2: 按下F1读取存档")
-                if not self.keyboard_controller.quick_load_save():
-                    self._handle_error("F1按键失败")
-                    break
-                
-                self._wait_with_cancel(self.config['f1_delay'], "第一次确认")
-                
-                # 步骤3: 第一次按下A键
-                self._log_progress("步骤3: 第一次按下A键")
-                if not self.keyboard_controller.confirm_action():
-                    self._handle_error("第一次A键失败")
-                    break
-                
-                self._wait_with_cancel(self.config['first_a_delay'], "第二次确认")
-                
-                # 步骤4: 第二次按下A键
-                self._log_progress("步骤4: 第二次按下A键")
-                if not self.keyboard_controller.confirm_action():
-                    self._handle_error("第二次A键失败")
-                    break
-                
-                self._wait_with_cancel(self.config['analysis_delay'], "开始分析")
-                
-                # 步骤5: 区域截图分析
-                self._log_progress("步骤5: 进行区域截图分析")
-                analysis_result = self._analyze_regions()
-                
-                if analysis_result['has_failure']:
-                    # 存在分析失败，停止循环
-                    self._handle_analysis_failure(analysis_result)
-                    break
-                else:
-                    # 所有区域分析成功，继续下一轮
-                    success_count = analysis_result['success_count']
-                    self.hunt_count += success_count
-                    self._log_progress(f"第{self.hunt_count}次刷闪完成，继续下一轮")
+                # 执行时间轴动作序列
+                for i, action in enumerate(timeline_actions):
+                    if not self.is_hunting:
+                        break
                     
-                    if self.on_hunt_progress:
-                        self.on_hunt_progress(self.hunt_count, success_count)
+                    action_type = action['action']
+                    delay = action['delay']
+                    description = action['description']
+                    
+                    self._log_progress(f"步骤{i+1}: {description}")
+                    
+                    # 执行动作
+                    if action_type == 'initial_delay':
+                        self._wait_with_cancel(delay, "开始刷闪")
+                    elif action_type == 'reset':
+                        if not self.keyboard_controller.reset_action():
+                            self._handle_error("重置键失败")
+                            return
+                        self._wait_with_cancel(delay, "等待")
+                    elif action_type == 'quick_load':
+                        if not self.keyboard_controller.quick_load_save():
+                            self._handle_error("快速读取键失败")
+                            return
+                        self._wait_with_cancel(delay, "等待")
+                    elif action_type == 'confirm':
+                        if not self.keyboard_controller.confirm_action():
+                            self._handle_error("确认键失败")
+                            return
+                        self._wait_with_cancel(delay, "等待")
+                    elif action_type == 'analysis':
+                        # 进行区域截图分析
+                        analysis_result = self._analyze_regions()
+                        
+                        if analysis_result['has_failure']:
+                            # 存在分析失败，停止循环
+                            self._handle_analysis_failure(analysis_result)
+                            return
+                        else:
+                            # 所有区域分析成功，继续下一轮
+                            success_count = analysis_result['success_count']
+                            self.hunt_count += success_count
+                            self._log_progress(f"第{self.hunt_count}次刷闪完成，继续下一轮")
+                            
+                            if self.on_hunt_progress:
+                                self.on_hunt_progress(self.hunt_count, success_count)
+                    elif action_type == 'custom_delay':
+                        self._wait_with_cancel(delay, description)
         
         except Exception as e:
             self.logger.error(f"自动刷闪出错: {e}")
@@ -184,14 +199,10 @@ class AutoHunter:
     def _analyze_regions(self) -> Dict:
         """分析所有区域（带重试机制）"""
         try:
-            # 获取参考图像名称
-            reference_name = self.config.get('reference_image')
-            if not reference_name:
-                reference_names = self.image_analyzer.get_reference_list()
-                if reference_names:
-                    reference_name = reference_names[0]
-                else:
-                    return {'has_failure': True, 'success_count': 0, 'failed_regions': ['无参考图像']}
+            # 检查是否有参考图像
+            reference_names = self.image_analyzer.get_reference_list()
+            if not reference_names:
+                return {'has_failure': True, 'success_count': 0, 'failed_regions': ['无参考图像']}
             
             retry_count = self.config.get('retry_count', 2)
             retry_interval = self.config.get('retry_interval', 2.0)
@@ -211,19 +222,35 @@ class AutoHunter:
                 
                 # 分析每个区域
                 failed_regions = []
+                failed_images = []  # 收集失败图像
                 success_count = 0
                 all_success = True
                 
+                # 收集所有分析结果用于实时显示
+                realtime_analysis_results = []
+                
                 for result in results:
-                    analysis = self.image_analyzer.analyze_image(result['image'], reference_name)
+                    analysis = self.image_analyzer.analyze_image_multi_reference(result['image'])
+                    analysis['region_name'] = result['name']
+                    realtime_analysis_results.append(analysis)
                     
                     if analysis.get('is_match', False):
                         success_count += 1
-                        self.logger.info(f"区域 {result['name']} 分析成功")
+                        best_ref = analysis.get('best_reference', '未知')
+                        self.logger.info(f"区域 {result['name']} 分析成功 (最佳匹配: {best_ref})")
                     else:
-                        failed_regions.append(result['name'])
+                        # 标记失败区域和第几次判断
+                        failed_region_info = f"{result['name']} (第{attempt + 1}次判断)"
+                        failed_regions.append(failed_region_info)
+                        # 保存失败图像
+                        if 'image_path' in result:
+                            failed_images.append((failed_region_info, result['image_path']))
                         all_success = False
-                        self.logger.info(f"区域 {result['name']} 分析失败")
+                        self.logger.info(f"区域 {result['name']} 分析失败 (第{attempt + 1}次判断)")
+                
+                # 实时显示分析结果到GUI
+                if hasattr(self, 'on_analysis_progress') and callable(self.on_analysis_progress):
+                    self.on_analysis_progress(realtime_analysis_results, attempt + 1)
                 
                 # 如果所有区域都分析成功，直接返回成功
                 if all_success:
@@ -232,6 +259,7 @@ class AutoHunter:
                         'has_failure': False,
                         'success_count': success_count,
                         'failed_regions': [],
+                        'failed_images': [],
                         'total_regions': len(results),
                         'attempt_count': attempt + 1
                     }
@@ -247,6 +275,7 @@ class AutoHunter:
                 'has_failure': True,
                 'success_count': success_count,
                 'failed_regions': failed_regions,
+                'failed_images': failed_images,
                 'total_regions': len(results),
                 'attempt_count': retry_count + 1
             }
@@ -266,12 +295,49 @@ class AutoHunter:
         # 停止刷闪
         self.is_hunting = False
         
+        # 播放BGM音乐（检测到闪光）
+        self._play_shiny_bgm()
+        
         # 显示结果对话框
         self._show_result_dialog(analysis_result)
         
         # 调用回调
         if self.on_hunt_result:
             self.on_hunt_result(analysis_result)
+    
+    def _play_shiny_bgm(self):
+        """播放闪光BGM音乐"""
+        try:
+            import pygame
+            import threading
+            
+            def play_music():
+                try:
+                    # 初始化pygame mixer
+                    pygame.mixer.init()
+                    
+                    # 音乐文件路径
+                    music_path = "configs/music/Édith Piaf - Non, je ne regrette rien_EM.flac"
+                    
+                    if os.path.exists(music_path):
+                        # 加载并播放音乐
+                        pygame.mixer.music.load(music_path)
+                        pygame.mixer.music.play()
+                        self.logger.info("播放闪光BGM音乐")
+                    else:
+                        self.logger.warning(f"BGM音乐文件不存在: {music_path}")
+                        
+                except Exception as e:
+                    self.logger.error(f"播放BGM失败: {e}")
+            
+            # 在后台线程中播放音乐，避免阻塞UI
+            music_thread = threading.Thread(target=play_music, daemon=True)
+            music_thread.start()
+            
+        except ImportError:
+            self.logger.warning("pygame未安装，无法播放BGM音乐")
+        except Exception as e:
+            self.logger.error(f"播放BGM失败: {e}")
     
     def _show_result_dialog(self, analysis_result: Dict):
         """显示结果对话框"""

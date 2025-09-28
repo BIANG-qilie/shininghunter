@@ -15,8 +15,11 @@ import json
 import time
 import os
 import shutil
+import pandas as pd
+from datetime import datetime
 
 from .image_analyzer import ImageAnalyzer
+from .probability_calculator import ProbabilityCalculator
 
 class MainGUI:
     """主界面类"""
@@ -33,10 +36,19 @@ class MainGUI:
         self.is_capturing = False
         self.analysis_results = []
         
+        # 概率计算器
+        self.probability_calculator = ProbabilityCalculator()
+        
+        # 概率相关变量
+        self.generation_var = tk.StringVar(value="6")
+        self.judgment_count_var = tk.StringVar(value="1")
+        self.current_title_var = tk.StringVar(value="平平无奇")
+        self.current_probability_var = tk.StringVar(value="0.00%")
+        
         # 设置窗口属性
         self.root.title("ShiningHunter - 宝可梦闪光刷取工具")
-        self.root.geometry("900x700")
-        self.root.minsize(700, 500)
+        self.root.geometry("1000x960")  # 800 * 1.2 = 960
+        self.root.minsize(800, 720)     # 600 * 1.2 = 720
         self.root.configure(bg='#f0f0f0')
         
         # 创建界面
@@ -53,16 +65,18 @@ class MainGUI:
         # 设置主题
         style.theme_use('clam')
         
-        # 定义现代化颜色
+        # 定义现代化颜色 - 更现代的配色方案
         self.colors = {
-            'primary': '#2E86AB',      # 主色调 - 蓝色
-            'secondary': '#A23B72',    # 次要色调 - 紫红色
-            'success': '#F18F01',      # 成功色 - 橙色
-            'warning': '#C73E1D',      # 警告色 - 红色
-            'info': '#7209B7',         # 信息色 - 紫色
-            'light': '#F8F9FA',        # 浅色背景
-            'dark': '#212529',         # 深色文字
-            'border': '#DEE2E6'        # 边框色
+            'primary': '#2563EB',      # 主色调 - 现代蓝
+            'secondary': '#7C3AED',    # 次要色调 - 现代紫
+            'success': '#059669',      # 成功色 - 现代绿
+            'warning': '#DC2626',      # 警告色 - 现代红
+            'info': '#0891B2',         # 信息色 - 现代青
+            'light': '#F8FAFC',        # 浅色背景
+            'dark': '#1E293B',         # 深色文字
+            'border': '#E2E8F0',       # 边框色
+            'surface': '#FFFFFF',      # 表面色
+            'accent': '#F59E0B'        # 强调色 - 现代橙
         }
         
         # 配置LabelFrame样式
@@ -75,16 +89,17 @@ class MainGUI:
                        foreground=self.colors['primary'],
                        font=('Arial', 10, 'bold'))
         
-        # 配置按钮样式
+        # 配置按钮样式 - 更现代化的设计
         style.configure('Modern.TButton',
                        background=self.colors['primary'],
                        foreground='white',
                        borderwidth=0,
                        focuscolor='none',
-                       font=('Arial', 9, 'bold'))
+                       font=('Segoe UI', 9, 'bold'),
+                       padding=(12, 6))
         style.map('Modern.TButton',
-                 background=[('active', self.colors['secondary']),
-                           ('pressed', self.colors['dark'])])
+                  background=[('active', self.colors['secondary']),
+                            ('pressed', self.colors['dark'])])
         
         # 配置成功按钮样式
         style.configure('Success.TButton',
@@ -92,10 +107,11 @@ class MainGUI:
                        foreground='white',
                        borderwidth=0,
                        focuscolor='none',
-                       font=('Arial', 9, 'bold'))
+                       font=('Segoe UI', 9, 'bold'),
+                       padding=(12, 6))
         style.map('Success.TButton',
-                 background=[('active', '#E67E22'),
-                           ('pressed', '#D35400')])
+                  background=[('active', '#047857'),
+                            ('pressed', '#065F46')])
         
         # 配置警告按钮样式
         style.configure('Warning.TButton',
@@ -103,10 +119,35 @@ class MainGUI:
                        foreground='white',
                        borderwidth=0,
                        focuscolor='none',
-                       font=('Arial', 9, 'bold'))
+                       font=('Segoe UI', 9, 'bold'),
+                       padding=(12, 6))
         style.map('Warning.TButton',
-                 background=[('active', '#E74C3C'),
-                           ('pressed', '#C0392B')])
+                  background=[('active', '#B91C1C'),
+                            ('pressed', '#991B1B')])
+        
+        # 配置信息按钮样式
+        style.configure('Info.TButton',
+                       background=self.colors['info'],
+                       foreground='white',
+                       borderwidth=0,
+                       focuscolor='none',
+                       font=('Segoe UI', 9, 'bold'),
+                       padding=(12, 6))
+        style.map('Info.TButton',
+                  background=[('active', '#0E7490'),
+                            ('pressed', '#155E75')])
+        
+        # 配置强调按钮样式
+        style.configure('Accent.TButton',
+                       background=self.colors['accent'],
+                       foreground='white',
+                       borderwidth=0,
+                       focuscolor='none',
+                       font=('Segoe UI', 9, 'bold'),
+                       padding=(12, 6))
+        style.map('Accent.TButton',
+                  background=[('active', '#D97706'),
+                            ('pressed', '#B45309')])
         
         # 配置进度条样式
         style.configure('Modern.Horizontal.TProgressbar',
@@ -116,15 +157,42 @@ class MainGUI:
                        lightcolor=self.colors['primary'],
                        darkcolor=self.colors['primary'])
         
-        # 配置输入框样式
+        # 配置输入框样式 - 更现代化
         style.configure('Modern.TEntry',
-                       fieldbackground='white',
-                       borderwidth=2,
+                       fieldbackground=self.colors['surface'],
+                       borderwidth=1,
                        relief='solid',
-                       insertcolor=self.colors['primary'])
+                       insertcolor=self.colors['primary'],
+                       font=('Segoe UI', 9))
         style.map('Modern.TEntry',
-                 focuscolor=[('!focus', self.colors['border']),
-                           ('focus', self.colors['primary'])])
+                  focuscolor=[('!focus', self.colors['border']),
+                            ('focus', self.colors['primary'])],
+                  bordercolor=[('!focus', self.colors['border']),
+                             ('focus', self.colors['primary'])])
+        
+        # 配置下拉框样式
+        style.configure('Modern.TCombobox',
+                       fieldbackground=self.colors['surface'],
+                       borderwidth=1,
+                       relief='solid',
+                       font=('Segoe UI', 9))
+        style.map('Modern.TCombobox',
+                  focuscolor=[('!focus', self.colors['border']),
+                            ('focus', self.colors['primary'])],
+                  bordercolor=[('!focus', self.colors['border']),
+                             ('focus', self.colors['primary'])])
+        
+        # 配置标签样式
+        style.configure('Modern.TLabel',
+                       background=self.colors['light'],
+                       foreground=self.colors['dark'],
+                       font=('Segoe UI', 9))
+        
+        # 配置强调标签样式
+        style.configure('Accent.TLabel',
+                       background=self.colors['light'],
+                       foreground=self.colors['accent'],
+                       font=('Segoe UI', 9, 'bold'))
     
     def create_interface(self):
         """创建主界面"""
@@ -153,6 +221,10 @@ class MainGUI:
         # 键盘控制区域
         keyboard_frame = ttk.LabelFrame(control_frame, text="键盘控制")
         keyboard_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # 重置按钮
+        ttk.Button(keyboard_frame, text="Ctrl+R - 重置",
+                  command=self.reset_action).pack(side=tk.LEFT, padx=5, pady=5)
         
         # F1快速读取存档
         ttk.Button(keyboard_frame, text="F1 - 快速读取存档", 
@@ -189,36 +261,9 @@ class MainGUI:
         ttk.Button(control_buttons_frame, text="停止自动刷闪", 
                   command=self.stop_auto_hunt, style='Warning.TButton').pack(side=tk.LEFT, padx=5)
         
-        # 时间配置管理按钮
-        config_buttons_frame = ttk.Frame(auto_frame)
-        config_buttons_frame.pack(fill=tk.X, padx=5, pady=2)
-        
-        ttk.Button(config_buttons_frame, text="保存时间配置", 
-                  command=self.save_time_config, style='Modern.TButton').pack(side=tk.LEFT, padx=2)
-        
-        ttk.Button(config_buttons_frame, text="加载时间配置", 
-                  command=self.load_time_config, style='Modern.TButton').pack(side=tk.LEFT, padx=2)
-        
-        ttk.Button(config_buttons_frame, text="重置为默认", 
-                  command=self.reset_time_config, style='Warning.TButton').pack(side=tk.LEFT, padx=2)
-        
-        # 预设配置选择
-        preset_frame = ttk.Frame(auto_frame)
-        preset_frame.pack(fill=tk.X, padx=5, pady=2)
-        
-        ttk.Label(preset_frame, text="预设配置:").pack(side=tk.LEFT, padx=2)
-        
-        ttk.Button(preset_frame, text="默认", 
-                  command=lambda: self.load_preset_config("default"), style='Modern.TButton').pack(side=tk.LEFT, padx=2)
-        
-        ttk.Button(preset_frame, text="快速", 
-                  command=lambda: self.load_preset_config("fast"), style='Success.TButton').pack(side=tk.LEFT, padx=2)
-        
-        ttk.Button(preset_frame, text="安全", 
-                  command=lambda: self.load_preset_config("safe"), style='Warning.TButton').pack(side=tk.LEFT, padx=2)
         
         # 批量导入功能
-        batch_import_frame = ttk.LabelFrame(auto_frame, text="批量导入配置", style='Modern.TLabelframe')
+        batch_import_frame = ttk.LabelFrame(auto_frame, text="批量导入配置(支持多图片)", style='Modern.TLabelframe')
         batch_import_frame.pack(fill=tk.X, padx=5, pady=2)
         
         # 导入输入框
@@ -233,47 +278,110 @@ class MainGUI:
         ttk.Button(import_input_frame, text="批量导入", 
                   command=self.batch_import_config, style='Success.TButton').pack(side=tk.LEFT, padx=5)
         
+        # 文件夹导入
+        folder_import_frame = ttk.Frame(batch_import_frame)
+        folder_import_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        ttk.Button(folder_import_frame, text="选择文件夹导入(多图片)", 
+                  command=self.folder_import_config, style='Info.TButton').pack(side=tk.LEFT, padx=2)
+        
+        self.folder_path_var = tk.StringVar(value="未选择文件夹")
+        folder_path_label = ttk.Label(folder_import_frame, textvariable=self.folder_path_var, 
+                                     style='Modern.TLabel')
+        folder_path_label.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # 添加说明标签
+        help_label = ttk.Label(batch_import_frame, 
+                              text="💡 提示: 文件夹导入会自动导入文件夹下的所有图片文件作为参考图像", 
+                              style='Info.TLabel')
+        help_label.pack(fill=tk.X, padx=5, pady=2)
+        
         # 导入状态显示
         self.import_status_var = tk.StringVar(value="")
         import_status_label = ttk.Label(batch_import_frame, textvariable=self.import_status_var, 
                                       foreground='blue')
         import_status_label.pack(pady=2)
         
-        # 时间配置区域
-        time_config_frame = ttk.LabelFrame(auto_frame, text="时间配置", style='Modern.TLabelframe')
-        time_config_frame.pack(fill=tk.X, padx=5, pady=2)
+        # 时间轴配置区域
+        timeline_config_frame = ttk.LabelFrame(auto_frame, text="时间轴配置", style='Modern.TLabelframe')
+        timeline_config_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=2)
         
-        # 时间配置网格
-        time_grid_frame = ttk.Frame(time_config_frame)
-        time_grid_frame.pack(fill=tk.X, padx=5, pady=2)
+        # 时间轴列表
+        timeline_list_frame = ttk.Frame(timeline_config_frame)
+        timeline_list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=2)
         
-        # 初始延迟
-        ttk.Label(time_grid_frame, text="初始延迟(秒):").grid(row=0, column=0, sticky=tk.W, padx=2)
-        self.initial_delay_var = tk.StringVar(value="5.0")
-        initial_delay_entry = ttk.Entry(time_grid_frame, textvariable=self.initial_delay_var, width=10, style='Modern.TEntry')
-        initial_delay_entry.grid(row=0, column=1, padx=2)
-        ttk.Label(time_grid_frame, text="(1.0-30.0)").grid(row=0, column=2, sticky=tk.W, padx=2)
+        # 创建时间轴Treeview
+        timeline_columns = ('序号', '动作', '延迟(秒)', '描述')
+        self.timeline_tree = ttk.Treeview(timeline_list_frame, columns=timeline_columns, show='headings', height=6)
         
-        # F1后延迟
-        ttk.Label(time_grid_frame, text="F1后延迟(秒):").grid(row=0, column=3, sticky=tk.W, padx=2)
-        self.f1_delay_var = tk.StringVar(value="0.5")
-        f1_delay_entry = ttk.Entry(time_grid_frame, textvariable=self.f1_delay_var, width=10, style='Modern.TEntry')
-        f1_delay_entry.grid(row=0, column=4, padx=2)
-        ttk.Label(time_grid_frame, text="(0.1-5.0)").grid(row=0, column=5, sticky=tk.W, padx=2)
+        for col in timeline_columns:
+            self.timeline_tree.heading(col, text=col)
+            self.timeline_tree.column(col, width=100)
         
-        # 第一次A键后延迟
-        ttk.Label(time_grid_frame, text="第一次A键后延迟(秒):").grid(row=1, column=0, sticky=tk.W, padx=2)
-        self.first_a_delay_var = tk.StringVar(value="0.8")
-        first_a_delay_entry = ttk.Entry(time_grid_frame, textvariable=self.first_a_delay_var, width=10, style='Modern.TEntry')
-        first_a_delay_entry.grid(row=1, column=1, padx=2)
-        ttk.Label(time_grid_frame, text="(0.1-5.0)").grid(row=1, column=2, sticky=tk.W, padx=2)
+        # 时间轴滚动条
+        timeline_scrollbar = ttk.Scrollbar(timeline_list_frame, orient=tk.VERTICAL, command=self.timeline_tree.yview)
+        self.timeline_tree.configure(yscrollcommand=timeline_scrollbar.set)
         
-        # 分析前延迟
-        ttk.Label(time_grid_frame, text="分析前延迟(秒):").grid(row=1, column=3, sticky=tk.W, padx=2)
-        self.analysis_delay_var = tk.StringVar(value="4.0")
-        analysis_delay_entry = ttk.Entry(time_grid_frame, textvariable=self.analysis_delay_var, width=10, style='Modern.TEntry')
-        analysis_delay_entry.grid(row=1, column=4, padx=2)
-        ttk.Label(time_grid_frame, text="(1.0-20.0)").grid(row=1, column=5, sticky=tk.W, padx=2)
+        self.timeline_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        timeline_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 时间轴控制按钮
+        timeline_control_frame = ttk.Frame(timeline_config_frame)
+        timeline_control_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        ttk.Button(timeline_control_frame, text="添加动作", 
+                  command=self.add_timeline_action, style='Success.TButton').pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(timeline_control_frame, text="删除动作", 
+                  command=self.remove_timeline_action, style='Warning.TButton').pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(timeline_control_frame, text="上移", 
+                  command=self.move_timeline_up, style='Modern.TButton').pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(timeline_control_frame, text="下移", 
+                  command=self.move_timeline_down, style='Modern.TButton').pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(timeline_control_frame, text="重置为默认", 
+                  command=self.reset_timeline_default, style='Info.TButton').pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(timeline_control_frame, text="导出时间轴", 
+                  command=self.export_timeline_config, style='Modern.TButton').pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(timeline_control_frame, text="导入时间轴", 
+                  command=self.import_timeline_config, style='Modern.TButton').pack(side=tk.LEFT, padx=2)
+        
+        # 初始化默认时间轴（稍后在status_text创建后初始化）
+        self.timeline_actions = []
+        
+        # 自定义键位设置
+        key_config_frame = ttk.LabelFrame(auto_frame, text="自定义键位设置", style='Modern.TLabelframe')
+        key_config_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        # 键位配置网格
+        key_grid_frame = ttk.Frame(key_config_frame)
+        key_grid_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        # 重置键
+        ttk.Label(key_grid_frame, text="重置键:").grid(row=0, column=0, sticky=tk.W, padx=2)
+        self.reset_key_var = tk.StringVar(value="ctrl+r")
+        reset_key_entry = ttk.Entry(key_grid_frame, textvariable=self.reset_key_var, width=8, style='Modern.TEntry')
+        reset_key_entry.grid(row=0, column=1, padx=2)
+        
+        # 快速读取键
+        ttk.Label(key_grid_frame, text="快速读取键:").grid(row=0, column=2, sticky=tk.W, padx=2)
+        self.quick_load_key_var = tk.StringVar(value="f1")
+        quick_load_key_entry = ttk.Entry(key_grid_frame, textvariable=self.quick_load_key_var, width=5, style='Modern.TEntry')
+        quick_load_key_entry.grid(row=0, column=3, padx=2)
+        
+        # 确认键
+        ttk.Label(key_grid_frame, text="确认键:").grid(row=0, column=4, sticky=tk.W, padx=2)
+        self.confirm_key_var = tk.StringVar(value="x")
+        confirm_key_entry = ttk.Entry(key_grid_frame, textvariable=self.confirm_key_var, width=5, style='Modern.TEntry')
+        confirm_key_entry.grid(row=0, column=5, padx=2)
+        
+        # 应用键位设置按钮
+        ttk.Button(key_grid_frame, text="应用键位设置", 
+                  command=self.apply_key_settings, style='Modern.TButton').grid(row=1, column=0, columnspan=6, pady=5)
         
         # 分析重试配置
         retry_config_frame = ttk.LabelFrame(auto_frame, text="分析重试配置", style='Modern.TLabelframe')
@@ -296,6 +404,48 @@ class MainGUI:
         retry_interval_entry.grid(row=0, column=4, padx=2)
         ttk.Label(retry_grid_frame, text="(0.5-10.0)").grid(row=0, column=5, sticky=tk.W, padx=2)
         
+        # 概率统计配置
+        probability_config_frame = ttk.LabelFrame(auto_frame, text="概率统计配置", style='Modern.TLabelframe')
+        probability_config_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        # 概率配置网格
+        prob_config_grid_frame = ttk.Frame(probability_config_frame)
+        prob_config_grid_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        # 世代选择
+        ttk.Label(prob_config_grid_frame, text="世代:").grid(row=0, column=0, sticky=tk.W, padx=2)
+        generation_combo = ttk.Combobox(prob_config_grid_frame, textvariable=self.generation_var, 
+                                       values=self.probability_calculator.get_available_generations(),
+                                       width=8, state='readonly', style='Modern.TCombobox')
+        generation_combo.grid(row=0, column=1, padx=2)
+        generation_combo.bind('<<ComboboxSelected>>', self._update_probability_display)
+        
+        # 判定数输入
+        ttk.Label(prob_config_grid_frame, text="判定数:").grid(row=0, column=2, sticky=tk.W, padx=2)
+        judgment_entry = ttk.Entry(prob_config_grid_frame, textvariable=self.judgment_count_var, 
+                                  width=8, style='Modern.TEntry')
+        judgment_entry.grid(row=0, column=3, padx=2)
+        judgment_entry.bind('<KeyRelease>', self._update_probability_display)
+        
+        # 累积概率显示
+        ttk.Label(prob_config_grid_frame, text="累积概率:", style='Modern.TLabel').grid(row=0, column=4, sticky=tk.W, padx=2)
+        prob_label = ttk.Label(prob_config_grid_frame, textvariable=self.current_probability_var, 
+                              style='Accent.TLabel')
+        prob_label.grid(row=0, column=5, padx=2)
+        
+        # 概率配置管理按钮
+        prob_buttons_frame = ttk.Frame(probability_config_frame)
+        prob_buttons_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        ttk.Button(prob_buttons_frame, text="保存概率配置", 
+                  command=self.save_probability_config, style='Info.TButton').pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(prob_buttons_frame, text="加载概率配置", 
+                  command=self.load_probability_config, style='Info.TButton').pack(side=tk.LEFT, padx=2)
+        
+        ttk.Button(prob_buttons_frame, text="重置概率配置", 
+                  command=self.reset_probability_config, style='Warning.TButton').pack(side=tk.LEFT, padx=2)
+        
         # 状态显示
         self.hunt_status_var = tk.StringVar(value="就绪")
         self.hunt_status_label = ttk.Label(auto_frame, textvariable=self.hunt_status_var, 
@@ -316,6 +466,7 @@ class MainGUI:
                                                  length=200, style='Modern.Horizontal.TProgressbar')
         self.countdown_progress.pack(pady=2)
         
+        
         # 倒计时相关变量
         self.countdown_timer = None
         self.countdown_remaining = 0
@@ -324,6 +475,9 @@ class MainGUI:
         
         # 为输入框添加验证
         self._setup_input_validation()
+        
+        # 初始化概率显示
+        self._update_probability_display()
         
         # 状态显示
         status_frame = ttk.LabelFrame(control_frame, text="状态信息")
@@ -335,6 +489,9 @@ class MainGUI:
         
         self.status_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 初始化默认时间轴
+        self.reset_timeline_default()
     
     def create_screenshot_tab(self):
         """创建截图标签页"""
@@ -365,6 +522,31 @@ class MainGUI:
         
         ttk.Button(control_frame, text="加载区域配置", 
                   command=self.load_regions_config).pack(side=tk.LEFT, padx=5, pady=5)
+        
+        # 截图清理控制
+        cleanup_frame = ttk.LabelFrame(screenshot_frame, text="截图清理")
+        cleanup_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        # 清理设置
+        cleanup_settings_frame = ttk.Frame(cleanup_frame)
+        cleanup_settings_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        ttk.Label(cleanup_settings_frame, text="保留时间(小时):").pack(side=tk.LEFT)
+        self.cleanup_age_var = tk.StringVar(value="24")
+        ttk.Entry(cleanup_settings_frame, textvariable=self.cleanup_age_var, width=10).pack(side=tk.LEFT, padx=5)
+        
+        self.keep_shiny_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(cleanup_settings_frame, text="保留闪光图片", 
+                        variable=self.keep_shiny_var).pack(side=tk.LEFT, padx=10)
+        
+        # 清理按钮
+        cleanup_button_frame = ttk.Frame(cleanup_frame)
+        cleanup_button_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Button(cleanup_button_frame, text="立即清理", 
+                  command=self.cleanup_screenshots).pack(side=tk.LEFT, padx=5)
+        ttk.Button(cleanup_button_frame, text="标记闪光图片", 
+                  command=self.mark_shiny_images).pack(side=tk.LEFT, padx=5)
         
         # 区域列表
         list_frame = ttk.LabelFrame(screenshot_frame, text="截图区域列表")
@@ -447,22 +629,25 @@ class MainGUI:
         ttk.Label(threshold_frame, text="颜色相似度阈值:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
         self.color_sim_var = tk.DoubleVar(value=0.8)
         ttk.Scale(threshold_frame, from_=0.0, to=1.0, variable=self.color_sim_var, 
-                 orient=tk.HORIZONTAL).grid(row=0, column=1, padx=5, pady=5, sticky=tk.EW)
-        ttk.Label(threshold_frame, textvariable=self.color_sim_var).grid(row=0, column=2, padx=5, pady=5)
+                 orient=tk.HORIZONTAL, command=self._update_threshold_display).grid(row=0, column=1, padx=5, pady=5, sticky=tk.EW)
+        self.color_sim_label = ttk.Label(threshold_frame, text="0.80")
+        self.color_sim_label.grid(row=0, column=2, padx=5, pady=5)
         
         # 结构相似度阈值
         ttk.Label(threshold_frame, text="结构相似度阈值:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
         self.ssim_var = tk.DoubleVar(value=0.7)
         ttk.Scale(threshold_frame, from_=0.0, to=1.0, variable=self.ssim_var, 
-                 orient=tk.HORIZONTAL).grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
-        ttk.Label(threshold_frame, textvariable=self.ssim_var).grid(row=1, column=2, padx=5, pady=5)
+                 orient=tk.HORIZONTAL, command=self._update_threshold_display).grid(row=1, column=1, padx=5, pady=5, sticky=tk.EW)
+        self.ssim_label = ttk.Label(threshold_frame, text="0.70")
+        self.ssim_label.grid(row=1, column=2, padx=5, pady=5)
         
         # 颜色差异阈值
         ttk.Label(threshold_frame, text="颜色差异阈值:").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
         self.color_diff_var = tk.DoubleVar(value=30.0)
         ttk.Scale(threshold_frame, from_=0.0, to=100.0, variable=self.color_diff_var, 
-                 orient=tk.HORIZONTAL).grid(row=2, column=1, padx=5, pady=5, sticky=tk.EW)
-        ttk.Label(threshold_frame, textvariable=self.color_diff_var).grid(row=2, column=2, padx=5, pady=5)
+                 orient=tk.HORIZONTAL, command=self._update_threshold_display).grid(row=2, column=1, padx=5, pady=5, sticky=tk.EW)
+        self.color_diff_label = ttk.Label(threshold_frame, text="30.00")
+        self.color_diff_label.grid(row=2, column=2, padx=5, pady=5)
         
         # 保存/加载设置
         settings_control_frame = ttk.Frame(threshold_frame)
@@ -496,41 +681,64 @@ class MainGUI:
         success = self.app.keyboard_controller.confirm_action()
         self.log_message(f"确认操作: {'成功' if success else '失败'}")
     
+    def reset_action(self):
+        """重置操作"""
+        success = self.app.keyboard_controller.reset_action()
+        self.log_message(f"重置操作: {'成功' if success else '失败'}")
+    
+    def apply_key_settings(self):
+        """应用键位设置"""
+        try:
+            # 获取键位设置
+            reset_key = self.reset_key_var.get().strip().lower()
+            quick_load_key = self.quick_load_key_var.get().strip().lower()
+            confirm_key = self.confirm_key_var.get().strip().lower()
+            
+            # 验证键位设置
+            if not reset_key or not quick_load_key or not confirm_key:
+                messagebox.showerror("错误", "所有键位都必须设置")
+                return
+            
+            # 应用键位设置
+            self.app.keyboard_controller.set_custom_key('reset', reset_key)
+            self.app.keyboard_controller.set_custom_key('quick_load', quick_load_key)
+            self.app.keyboard_controller.set_custom_key('confirm', confirm_key)
+            
+            self.log_message(f"键位设置已应用: 重置={reset_key.upper()}, 快速读取={quick_load_key.upper()}, 确认={confirm_key.upper()}")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"应用键位设置失败: {e}")
+            self.log_message(f"应用键位设置失败: {e}")
+    
     def start_auto_hunt(self):
         """开始自动刷闪"""
-        # 从界面获取时间配置
-        try:
-            config = {
-                'initial_delay': float(self.initial_delay_var.get()),
-                'f1_delay': float(self.f1_delay_var.get()),
-                'first_a_delay': float(self.first_a_delay_var.get()),
-                'analysis_delay': float(self.analysis_delay_var.get()),
-                'retry_count': int(self.retry_count_var.get()),
-                'retry_interval': float(self.retry_interval_var.get()),
-            }
-        except ValueError:
-            messagebox.showerror("错误", "配置格式错误，请检查输入值")
+        # 验证时间轴配置
+        if not self.timeline_actions:
+            messagebox.showerror("错误", "时间轴配置不能为空")
             return
         
-        # 验证时间配置
-        if config['initial_delay'] < 1.0 or config['initial_delay'] > 30.0:
-            messagebox.showerror("错误", "初始延迟必须在1.0-30.0秒之间")
+        # 验证重试配置
+        try:
+            retry_count = int(self.retry_count_var.get())
+            retry_interval = float(self.retry_interval_var.get())
+        except ValueError:
+            messagebox.showerror("错误", "重试配置格式错误，请检查输入值")
             return
-        if config['f1_delay'] < 0.1 or config['f1_delay'] > 5.0:
-            messagebox.showerror("错误", "F1后延迟必须在0.1-5.0秒之间")
-            return
-        if config['first_a_delay'] < 0.1 or config['first_a_delay'] > 5.0:
-            messagebox.showerror("错误", "第一次A键后延迟必须在0.1-5.0秒之间")
-            return
-        if config['analysis_delay'] < 1.0 or config['analysis_delay'] > 20.0:
-            messagebox.showerror("错误", "分析前延迟必须在1.0-20.0秒之间")
-            return
-        if config['retry_count'] < 0 or config['retry_count'] > 5:
+        
+        if retry_count < 0 or retry_count > 5:
             messagebox.showerror("错误", "重试次数必须在0-5次之间")
             return
-        if config['retry_interval'] < 0.5 or config['retry_interval'] > 10.0:
+        if retry_interval < 0.5 or retry_interval > 10.0:
             messagebox.showerror("错误", "重试间隔必须在0.5-10.0秒之间")
             return
+        
+        # 设置配置
+        config = {
+            'timeline_actions': self.timeline_actions,
+            'retry_count': retry_count,
+            'retry_interval': retry_interval,
+            'reference_image': None
+        }
         
         # 设置参考图像
         reference_list = self.app.image_analyzer.get_reference_list()
@@ -538,7 +746,7 @@ class MainGUI:
             config['reference_image'] = reference_list[0]
         
         self.app.auto_hunter.set_config(config)
-        self.log_message(f"配置已更新: 初始延迟={config['initial_delay']}s, F1后延迟={config['f1_delay']}s, 第一次A键后延迟={config['first_a_delay']}s, 分析前延迟={config['analysis_delay']}s, 重试次数={config['retry_count']}次, 重试间隔={config['retry_interval']}s")
+        self.log_message(f"配置已更新: 时间轴动作数={len(self.timeline_actions)}, 重试次数={retry_count}次, 重试间隔={retry_interval}s")
         
         # 设置回调函数
         self.app.auto_hunter.set_callbacks(
@@ -546,7 +754,8 @@ class MainGUI:
             on_hunt_stop=self.on_hunt_stop,
             on_hunt_progress=self.on_hunt_progress,
             on_hunt_result=self.on_hunt_result,
-            on_countdown=self.start_countdown
+            on_countdown=self.start_countdown,
+            on_analysis_progress=self.on_analysis_progress
         )
         
         # 开始自动刷闪
@@ -567,96 +776,8 @@ class MainGUI:
         self.hunt_count_var.set("0")
         self.log_message("刷闪计数已重置")
     
-    def save_time_config(self):
-        """保存时间配置"""
-        try:
-            config = {
-                'initial_delay': float(self.initial_delay_var.get()),
-                'f1_delay': float(self.f1_delay_var.get()),
-                'first_a_delay': float(self.first_a_delay_var.get()),
-                'analysis_delay': float(self.analysis_delay_var.get()),
-                'retry_count': int(self.retry_count_var.get()),
-                'retry_interval': float(self.retry_interval_var.get()),
-            }
-            
-            file_path = filedialog.asksaveasfilename(
-                title="保存时间配置",
-                defaultextension=".json",
-                filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")],
-                initialdir="configs"
-            )
-            
-            if file_path:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=2, ensure_ascii=False)
-                self.log_message(f"时间配置已保存: {file_path}")
-                
-        except ValueError:
-            messagebox.showerror("错误", "时间配置格式错误，请检查输入值")
-        except Exception as e:
-            messagebox.showerror("错误", f"保存时间配置失败: {e}")
-            self.log_message(f"保存时间配置失败: {e}")
     
-    def load_time_config(self):
-        """加载时间配置"""
-        try:
-            file_path = filedialog.askopenfilename(
-                title="加载时间配置",
-                filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")],
-                initialdir="configs"
-            )
-            
-            if file_path:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                
-                # 更新界面显示
-                self.initial_delay_var.set(str(config.get('initial_delay', 5.0)))
-                self.f1_delay_var.set(str(config.get('f1_delay', 0.5)))
-                self.first_a_delay_var.set(str(config.get('first_a_delay', 0.8)))
-                self.analysis_delay_var.set(str(config.get('analysis_delay', 4.0)))
-                self.retry_count_var.set(str(config.get('retry_count', 2)))
-                self.retry_interval_var.set(str(config.get('retry_interval', 2.0)))
-                
-                self.log_message(f"时间配置已加载: {file_path}")
-                
-        except Exception as e:
-            messagebox.showerror("错误", f"加载时间配置失败: {e}")
-            self.log_message(f"加载时间配置失败: {e}")
     
-    def reset_time_config(self):
-        """重置为默认时间配置"""
-        self.initial_delay_var.set("5.0")
-        self.f1_delay_var.set("0.5")
-        self.first_a_delay_var.set("0.8")
-        self.analysis_delay_var.set("4.0")
-        self.retry_count_var.set("2")
-        self.retry_interval_var.set("2.0")
-        self.log_message("时间配置已重置为默认值")
-    
-    def load_preset_config(self, preset_name):
-        """加载预设配置"""
-        try:
-            config_file = f"configs/{preset_name}_time_config.json"
-            with open(config_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            # 更新界面显示
-            self.initial_delay_var.set(str(config.get('initial_delay', 5.0)))
-            self.f1_delay_var.set(str(config.get('f1_delay', 0.5)))
-            self.first_a_delay_var.set(str(config.get('first_a_delay', 0.8)))
-            self.analysis_delay_var.set(str(config.get('analysis_delay', 4.0)))
-            self.retry_count_var.set(str(config.get('retry_count', 2)))
-            self.retry_interval_var.set(str(config.get('retry_interval', 2.0)))
-            
-            description = config.get('description', '')
-            self.log_message(f"已加载{preset_name}预设配置: {description}")
-            
-        except FileNotFoundError:
-            messagebox.showerror("错误", f"预设配置文件不存在: {config_file}")
-        except Exception as e:
-            messagebox.showerror("错误", f"加载预设配置失败: {e}")
-            self.log_message(f"加载预设配置失败: {e}")
     
     def on_hunt_start(self):
         """自动刷闪开始回调"""
@@ -673,8 +794,15 @@ class MainGUI:
     def on_hunt_progress(self, total_count, current_success, message=None):
         """自动刷闪进度回调"""
         self.hunt_count_var.set(str(total_count))
+        self._update_probability_display()  # 更新概率显示
         if message:
             self.log_message(message)
+    
+    def on_analysis_progress(self, analysis_results, attempt):
+        """处理实时分析进度"""
+        # 更新图像分析页面的结果显示
+        self.display_analysis_results(analysis_results)
+        self.log_message(f"第{attempt}次分析完成，共{len(analysis_results)}个区域")
     
     def on_hunt_result(self, result):
         """自动刷闪结果回调"""
@@ -683,9 +811,851 @@ class MainGUI:
         attempt_count = result.get('attempt_count', 1)
         
         if failed_regions:
-            self.log_message(f"检测到闪光！失败区域: {', '.join(failed_regions)} (经过{attempt_count}次分析)")
+            # 显示自定义结果对话框
+            self._show_shiny_result_dialog(result)
         else:
             self.log_message(f"本轮成功: {success_count} 个区域 (第{attempt_count}次分析)")
+    
+    def _show_shiny_result_dialog(self, result):
+        """显示闪光检测结果对话框"""
+        failed_regions = result.get('failed_regions', [])
+        success_count = result.get('success_count', 0)
+        total_regions = result.get('total_regions', 0)
+        attempt_count = result.get('attempt_count', 1)
+        failed_images = result.get('failed_images', [])
+        
+        # 创建结果对话框
+        dialog = tk.Toplevel(self.root)
+        dialog.title("闪光检测结果")
+        dialog.geometry("800x700")  # 增加高度和宽度
+        dialog.attributes('-topmost', True)
+        dialog.grab_set()
+        
+        # 主框架
+        main_frame = ttk.Frame(dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # 结果信息
+        info_frame = ttk.LabelFrame(main_frame, text="检测结果")
+        info_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 计算当前称号
+        try:
+            generation = int(self.generation_var.get())
+            judgment_count = int(self.judgment_count_var.get())
+            hunt_count = int(self.hunt_count_var.get())
+            title, probability = self.probability_calculator.get_title_by_hunt_count(
+                generation, hunt_count, judgment_count
+            )
+        except:
+            title = "未知"
+            probability = 0.0
+        
+        info_text = f"""刷闪次数: {self.hunt_count_var.get()}
+成功区域: {success_count}/{total_regions}
+失败区域: {', '.join(failed_regions)}
+分析尝试次数: {attempt_count}
+当前称号: {title}
+累积概率: {probability:.2f}%
+
+经过多次重试分析，确认检测到闪光宝可梦！"""
+        
+        ttk.Label(info_frame, text=info_text, justify=tk.LEFT).pack(padx=10, pady=10)
+        
+        # 失败图像显示
+        if failed_images:
+            images_frame = ttk.LabelFrame(main_frame, text="识别失败的图像")
+            images_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+            
+            # 创建滚动区域
+            canvas = tk.Canvas(images_frame)
+            scrollbar = ttk.Scrollbar(images_frame, orient="vertical", command=canvas.yview)
+            scrollable_frame = ttk.Frame(canvas)
+            
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+            
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+            
+            # 使用网格布局显示失败图像
+            cols = 3  # 每行显示3个图像
+            for i, (region_name, image_path) in enumerate(failed_images):
+                try:
+                    # 加载并缩放图像
+                    img = Image.open(image_path)
+                    img.thumbnail((120, 120), Image.Resampling.LANCZOS)  # 稍微缩小图像
+                    photo = ImageTk.PhotoImage(img)
+                    
+                    # 计算网格位置
+                    row = i // cols
+                    col = i % cols
+                    
+                    # 创建图像显示框架
+                    img_frame = ttk.Frame(scrollable_frame)
+                    img_frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+                    
+                    # 区域名称标签
+                    name_label = ttk.Label(img_frame, text=f"{region_name}", 
+                                         font=('Arial', 9, 'bold'), anchor="center")
+                    name_label.pack(pady=(0, 2))
+                    
+                    # 图像标签
+                    img_label = ttk.Label(img_frame, image=photo, anchor="center")
+                    img_label.image = photo  # 保持引用
+                    img_label.pack()
+                    
+                except Exception as e:
+                    self.logger.error(f"加载失败图像 {image_path} 失败: {e}")
+            
+            # 配置网格权重，确保每列等宽
+            for i in range(cols):
+                scrollable_frame.grid_columnconfigure(i, weight=1)
+            
+            # 如果最后一行没有填满，添加空的占位框架
+            total_images = len(failed_images)
+            last_row = (total_images - 1) // cols
+            last_row_items = total_images % cols
+            if last_row_items > 0:  # 最后一行没有填满
+                for col in range(last_row_items, cols):
+                    empty_frame = ttk.Frame(scrollable_frame)
+                    empty_frame.grid(row=last_row, column=col, padx=5, pady=5, sticky="nsew")
+            
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+        
+        # 按钮框架
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        # 错判按钮
+        misjudge_btn = ttk.Button(button_frame, text="这是错判，继续刷闪", 
+                                 command=lambda: self._handle_misjudge(dialog, result),
+                                 style='Warning.TButton')
+        misjudge_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 确认按钮
+        confirm_btn = ttk.Button(button_frame, text="确认闪光，停止刷闪", 
+                                command=lambda: self._handle_confirm_shiny(dialog),
+                                style='Success.TButton')
+        confirm_btn.pack(side=tk.LEFT)
+    
+    def _handle_misjudge(self, dialog, result):
+        """处理错判"""
+        # 停止BGM播放
+        self._stop_bgm()
+        
+        failed_regions = result.get('failed_regions', [])
+        failed_images = result.get('failed_images', [])
+        success_count = result.get('success_count', 0)
+        total_regions = result.get('total_regions', 0)
+        
+        # 关闭当前对话框
+        dialog.destroy()
+        
+        # 如果有失败图像，询问是否加入参考图像
+        if failed_images:
+            self._ask_add_to_reference(failed_images, result)
+        else:
+            # 没有失败图像，直接处理错判
+            self._process_misjudge_without_images(failed_regions)
+    
+    def _ask_add_to_reference(self, failed_images, result):
+        """询问是否将错判图像加入参考图像"""
+        # 创建选择对话框
+        choice_dialog = tk.Toplevel(self.root)
+        choice_dialog.title("错判处理选择")
+        choice_dialog.geometry("600x400")
+        choice_dialog.attributes('-topmost', True)
+        choice_dialog.grab_set()
+        
+        # 主框架
+        main_frame = ttk.Frame(choice_dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # 说明文本
+        info_text = """检测到错判情况，您可以选择：
+
+1. 将错判图像加入参考图像库，提高未来识别准确性
+2. 仅处理错判，不修改参考图像库
+
+选择将错判图像加入参考图像库后，这些图像将作为新的参考图像，
+帮助系统在未来更好地识别类似情况。"""
+        
+        ttk.Label(main_frame, text=info_text, justify=tk.LEFT, 
+                 font=('Arial', 10)).pack(pady=(0, 20))
+        
+        # 显示错判图像预览
+        if failed_images:
+            preview_frame = ttk.LabelFrame(main_frame, text="错判图像预览")
+            preview_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+            
+            # 创建滚动区域
+            canvas = tk.Canvas(preview_frame)
+            scrollbar = ttk.Scrollbar(preview_frame, orient="vertical", command=canvas.yview)
+            scrollable_frame = ttk.Frame(canvas)
+            
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+            
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+            
+            # 显示图像预览
+            cols = 3
+            for i, (region_name, image_path) in enumerate(failed_images):
+                try:
+                    # 加载并缩放图像
+                    img = Image.open(image_path)
+                    img.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+                    
+                    # 计算网格位置
+                    row = i // cols
+                    col = i % cols
+                    
+                    # 创建图像显示框架
+                    img_frame = ttk.Frame(scrollable_frame)
+                    img_frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+                    
+                    # 区域名称标签
+                    name_label = ttk.Label(img_frame, text=f"{region_name}", 
+                                         font=('Arial', 8), anchor="center")
+                    name_label.pack(pady=(0, 2))
+                    
+                    # 图像标签
+                    img_label = ttk.Label(img_frame, image=photo, anchor="center")
+                    img_label.image = photo  # 保持引用
+                    img_label.pack()
+                    
+                except Exception as e:
+                    self.logger.error(f"加载错判图像 {image_path} 失败: {e}")
+            
+            # 配置网格权重
+            for i in range(cols):
+                scrollable_frame.grid_columnconfigure(i, weight=1)
+            
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+        
+        # 按钮框架
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        # 加入参考图像按钮
+        add_btn = ttk.Button(button_frame, text="加入参考图像库", 
+                           command=lambda: self._add_misjudge_to_reference(choice_dialog, failed_images, result),
+                           style='Success.TButton')
+        add_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 仅处理错判按钮
+        skip_btn = ttk.Button(button_frame, text="仅处理错判", 
+                            command=lambda: self._process_misjudge_without_images(choice_dialog, result),
+                            style='Warning.TButton')
+        skip_btn.pack(side=tk.LEFT)
+    
+    def _add_misjudge_to_reference(self, dialog, failed_images, result):
+        """将错判图像加入参考图像库"""
+        try:
+            added_count = 0
+            
+            for region_name, image_path in failed_images:
+                if image_path and os.path.exists(image_path):
+                    # 生成参考图像名称（使用英文避免编码问题）
+                    timestamp = int(time.time())
+                    # 将区域名中的中文字符替换为英文
+                    safe_region_name = region_name.replace("区域", "region").replace("第", "attempt").replace("次判断", "judgment")
+                    ref_name = f"misjudge_{safe_region_name}_{timestamp}"
+                    
+                    # 复制图像到configs目录
+                    configs_dir = "configs"
+                    if not os.path.exists(configs_dir):
+                        os.makedirs(configs_dir)
+                    
+                    # 生成目标路径
+                    ref_image_path = os.path.join(configs_dir, f"{ref_name}.png")
+                    
+                    # 复制图像文件
+                    shutil.copy2(image_path, ref_image_path)
+                    
+                    # 加载为参考图像
+                    self.app.image_analyzer.load_reference_image(ref_name, ref_image_path)
+                    added_count += 1
+            
+            # 更新参考图像列表显示
+            self.update_reference_list()
+            
+            # 关闭对话框
+            dialog.destroy()
+            
+            # 处理错判逻辑
+            self._process_misjudge_without_images(result)
+            
+            self.log_message(f"已将{added_count}个错判图像加入参考图像库")
+            messagebox.showinfo("成功", f"已将{added_count}个错判图像加入参考图像库")
+            
+        except Exception as e:
+            self.logger.error(f"加入参考图像失败: {e}")
+            messagebox.showerror("错误", f"加入参考图像失败: {e}")
+            dialog.destroy()
+    
+    def _process_misjudge_without_images(self, dialog_or_result, result=None):
+        """处理错判（不加入参考图像）"""
+        if result is None:
+            result = dialog_or_result
+        else:
+            dialog = dialog_or_result
+            dialog.destroy()
+        
+        failed_regions = result.get('failed_regions', [])
+        
+        # 更新刷闪次数：维持当前次数，加上失败区域数（这些是错判的案例）
+        current_count = int(self.hunt_count_var.get())
+        failed_count = len(failed_regions)  # 失败区域数量
+        new_count = current_count + failed_count
+        self.hunt_count_var.set(str(new_count))
+        
+        # 更新概率显示
+        self._update_probability_display()
+        
+        # 继续自动刷闪
+        if hasattr(self.app, 'auto_hunter') and self.app.auto_hunter:
+            self.app.auto_hunter.continue_hunting()
+        
+        self.log_message(f"错判处理：维持刷闪次数 {current_count}，加上错判区域 {failed_count}，继续刷闪")
+    
+    def _handle_confirm_shiny(self, dialog):
+        """确认闪光"""
+        # 停止BGM播放
+        self._stop_bgm()
+        
+        # 标记闪光图片并移动到shining文件夹
+        try:
+            # 获取最新的截图文件
+            screenshot_files = self._get_latest_screenshots()
+            for file_path in screenshot_files:
+                if file_path:
+                    self.app.screenshot_manager.mark_as_shiny(file_path)
+                    # 移动到shining文件夹
+                    self._move_to_shining_folder(file_path)
+        except Exception as e:
+            self.logger.error(f"处理闪光图片失败: {e}")
+        
+        # 保存历史记录到Excel
+        self._save_shiny_history()
+        
+        dialog.destroy()
+        self.log_message("确认检测到闪光宝可梦，自动刷闪已停止！")
+    
+    def _move_to_shining_folder(self, file_path):
+        """将闪光图片移动到shining文件夹"""
+        try:
+            import shutil
+            from pathlib import Path
+            
+            # 创建shining文件夹
+            shining_dir = Path("screenshots/shining")
+            shining_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 获取文件名
+            file_name = Path(file_path).name
+            
+            # 目标路径
+            target_path = shining_dir / file_name
+            
+            # 如果目标文件已存在，添加时间戳
+            if target_path.exists():
+                timestamp = int(time.time())
+                name_parts = file_name.rsplit('.', 1)
+                if len(name_parts) == 2:
+                    new_name = f"{name_parts[0]}_{timestamp}.{name_parts[1]}"
+                else:
+                    new_name = f"{file_name}_{timestamp}"
+                target_path = shining_dir / new_name
+            
+            # 移动文件
+            shutil.move(file_path, target_path)
+            self.log_message(f"闪光图片已移动到: {target_path}")
+            
+        except Exception as e:
+            self.logger.error(f"移动闪光图片失败: {e}")
+    
+    def _play_shiny_bgm(self):
+        """播放闪光BGM音乐"""
+        try:
+            import pygame
+            import threading
+            
+            def play_music():
+                try:
+                    # 初始化pygame mixer
+                    pygame.mixer.init()
+                    
+                    # 音乐文件路径
+                    music_path = "configs/music/Édith Piaf - Non, je ne regrette rien_EM.flac"
+                    
+                    if os.path.exists(music_path):
+                        # 加载并播放音乐
+                        pygame.mixer.music.load(music_path)
+                        pygame.mixer.music.play()
+                        self.log_message("播放闪光BGM音乐")
+                    else:
+                        self.log_message(f"BGM音乐文件不存在: {music_path}")
+                        
+                except Exception as e:
+                    self.logger.error(f"播放BGM失败: {e}")
+            
+            # 在后台线程中播放音乐，避免阻塞UI
+            music_thread = threading.Thread(target=play_music, daemon=True)
+            music_thread.start()
+            
+        except ImportError:
+            self.log_message("pygame未安装，无法播放BGM音乐")
+        except Exception as e:
+            self.logger.error(f"播放BGM失败: {e}")
+    
+    def _stop_bgm(self):
+        """停止BGM音乐播放"""
+        try:
+            import pygame
+            
+            # 停止音乐播放
+            pygame.mixer.music.stop()
+            self.log_message("已停止BGM音乐播放")
+            
+        except ImportError:
+            pass  # pygame未安装，忽略
+        except Exception as e:
+            self.logger.error(f"停止BGM失败: {e}")
+    
+    def _ask_cleanup_screenshots(self):
+        """询问用户是否清理screenshots文件夹"""
+        try:
+            from pathlib import Path
+            
+            # 检查screenshots文件夹是否存在
+            screenshots_dir = Path("screenshots")
+            if not screenshots_dir.exists():
+                return
+            
+            # 统计图片文件数量
+            image_files = list(screenshots_dir.glob("*.png")) + list(screenshots_dir.glob("*.jpg"))
+            if len(image_files) == 0:
+                return
+            
+            # 询问用户是否清理
+            result = messagebox.askyesno(
+                "清理截图文件夹", 
+                f"screenshots文件夹中有 {len(image_files)} 个图片文件。\n\n"
+                "是否要清理这些图片文件？\n"
+                "（闪光图片会被保留在shining文件夹中）"
+            )
+            
+            if result:
+                # 执行清理
+                self.app.screenshot_manager.cleanup_screenshots(keep_shiny=True, max_age_hours=0)
+                self.log_message(f"已清理screenshots文件夹，删除了 {len(image_files)} 个图片文件")
+                messagebox.showinfo("清理完成", f"已清理screenshots文件夹，删除了 {len(image_files)} 个图片文件")
+            else:
+                self.log_message("用户选择不清理screenshots文件夹")
+                
+        except Exception as e:
+            self.logger.error(f"清理提醒失败: {e}")
+    
+    def _save_shiny_history(self):
+        """保存出闪历史记录到Excel文件"""
+        try:
+            # 获取当前数据
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            hunt_count = int(self.hunt_count_var.get())
+            generation = int(self.generation_var.get())
+            judgment_count = int(self.judgment_count_var.get())
+            
+            # 计算概率和称号
+            title, probability = self.probability_calculator.get_title_by_hunt_count(
+                generation, hunt_count, judgment_count
+            )
+            
+            # 获取最新的截图文件路径
+            screenshot_paths = self._get_latest_screenshots()
+            
+            # 检查history.xlsx是否存在
+            history_file = "history.xlsx"
+            if os.path.exists(history_file):
+                # 读取现有文件
+                df = pd.read_excel(history_file)
+            else:
+                # 创建新的DataFrame
+                df = pd.DataFrame(columns=[
+                    '时间', '刷闪次数', '世代', '判定数', '累积概率(%)', '称号', '截图路径'
+                ])
+            
+            # 添加新记录
+            new_record = {
+                '时间': current_time,
+                '刷闪次数': hunt_count,
+                '世代': generation,
+                '判定数': judgment_count,
+                '累积概率(%)': round(probability, 2),
+                '称号': title,
+                '截图路径': '; '.join(screenshot_paths) if screenshot_paths else ''
+            }
+            
+            # 添加新行
+            df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
+            
+            # 保存到Excel文件
+            df.to_excel(history_file, index=False, engine='openpyxl')
+            
+            self.log_message(f"出闪历史记录已保存到 {history_file}")
+            
+        except Exception as e:
+            self.log_message(f"保存出闪历史记录失败: {e}")
+            self.logger.error(f"保存出闪历史记录失败: {e}")
+    
+    def _get_latest_screenshots(self):
+        """获取最新的截图文件路径"""
+        try:
+            screenshots_dir = "screenshots"
+            if not os.path.exists(screenshots_dir):
+                return []
+            
+            # 获取所有截图文件
+            screenshot_files = []
+            for file in os.listdir(screenshots_dir):
+                if file.endswith(('.png', '.jpg', '.jpeg')):
+                    file_path = os.path.join(screenshots_dir, file)
+                    screenshot_files.append(file_path)
+            
+            # 按修改时间排序，获取最新的文件
+            screenshot_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            
+            # 返回最新的几个文件（最多5个）
+            return screenshot_files[:5]
+            
+        except Exception as e:
+            self.logger.error(f"获取最新截图失败: {e}")
+            return []
+    
+    # 时间轴管理方法
+    def reset_timeline_default(self):
+        """重置为默认时间轴"""
+        self.timeline_actions = [
+            {'action': 'initial_delay', 'delay': 5.0, 'description': '初始冷却'},
+            {'action': 'reset', 'delay': 0.5, 'description': '按下重置键'},
+            {'action': 'quick_load', 'delay': 0.5, 'description': '按下快速读取键'},
+            {'action': 'confirm', 'delay': 0.8, 'description': '第一次确认'},
+            {'action': 'confirm', 'delay': 0.8, 'description': '第二次确认'},
+            {'action': 'analysis', 'delay': 4.0, 'description': '开始分析'}
+        ]
+        self.update_timeline_display()
+        # 只有在界面完全初始化后才记录日志
+        if hasattr(self, 'status_text'):
+            self.log_message("时间轴已重置为默认配置")
+    
+    def update_timeline_display(self):
+        """更新时间轴显示"""
+        # 清空现有项目
+        for item in self.timeline_tree.get_children():
+            self.timeline_tree.delete(item)
+        
+        # 添加动作项目
+        for i, action in enumerate(self.timeline_actions):
+            self.timeline_tree.insert('', 'end', values=(
+                i + 1,
+                action['action'],
+                action['delay'],
+                action['description']
+            ))
+    
+    def add_timeline_action(self):
+        """添加时间轴动作"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("添加时间轴动作")
+        dialog.geometry("400x300")
+        dialog.attributes('-topmost', True)
+        dialog.grab_set()
+        
+        # 主框架
+        main_frame = ttk.Frame(dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # 动作选择
+        ttk.Label(main_frame, text="动作类型:").pack(anchor=tk.W, pady=2)
+        action_var = tk.StringVar(value="reset")
+        action_combo = ttk.Combobox(main_frame, textvariable=action_var, 
+                                   values=['initial_delay', 'reset', 'quick_load', 'confirm', 'analysis', 'custom_delay'],
+                                   state='readonly')
+        action_combo.pack(fill=tk.X, pady=2)
+        
+        # 延迟时间
+        ttk.Label(main_frame, text="延迟时间(秒):").pack(anchor=tk.W, pady=2)
+        delay_var = tk.StringVar(value="1.0")
+        delay_entry = ttk.Entry(main_frame, textvariable=delay_var)
+        delay_entry.pack(fill=tk.X, pady=2)
+        
+        # 描述
+        ttk.Label(main_frame, text="描述:").pack(anchor=tk.W, pady=2)
+        description_var = tk.StringVar(value="")
+        description_entry = ttk.Entry(main_frame, textvariable=description_var)
+        description_entry.pack(fill=tk.X, pady=2)
+        
+        # 插入位置
+        ttk.Label(main_frame, text="插入位置:").pack(anchor=tk.W, pady=2)
+        position_var = tk.StringVar(value="end")
+        position_combo = ttk.Combobox(main_frame, textvariable=position_var,
+                                     values=['start', 'end', 'after_selected'],
+                                     state='readonly')
+        position_combo.pack(fill=tk.X, pady=2)
+        
+        # 按钮框架
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        def add_action():
+            try:
+                action = action_var.get()
+                delay = float(delay_var.get())
+                description = description_var.get() or f"{action}动作"
+                position = position_var.get()
+                
+                new_action = {
+                    'action': action,
+                    'delay': delay,
+                    'description': description
+                }
+                
+                if position == 'start':
+                    self.timeline_actions.insert(0, new_action)
+                elif position == 'end':
+                    self.timeline_actions.append(new_action)
+                elif position == 'after_selected':
+                    selected = self.timeline_tree.selection()
+                    if selected:
+                        index = self.timeline_tree.index(selected[0])
+                        self.timeline_actions.insert(index + 1, new_action)
+                    else:
+                        self.timeline_actions.append(new_action)
+                
+                self.update_timeline_display()
+                dialog.destroy()
+                self.log_message(f"已添加时间轴动作: {description}")
+                
+            except ValueError:
+                messagebox.showerror("错误", "延迟时间必须是数字")
+            except Exception as e:
+                messagebox.showerror("错误", f"添加动作失败: {e}")
+        
+        ttk.Button(button_frame, text="添加", command=add_action, style='Success.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="取消", command=dialog.destroy, style='Modern.TButton').pack(side=tk.LEFT, padx=5)
+    
+    def remove_timeline_action(self):
+        """删除选中的时间轴动作"""
+        selected = self.timeline_tree.selection()
+        if not selected:
+            messagebox.showwarning("警告", "请先选择要删除的动作")
+            return
+        
+        if messagebox.askyesno("确认", "确定要删除选中的动作吗？"):
+            index = self.timeline_tree.index(selected[0])
+            removed_action = self.timeline_actions.pop(index)
+            self.update_timeline_display()
+            self.log_message(f"已删除时间轴动作: {removed_action['description']}")
+    
+    def move_timeline_up(self):
+        """上移选中的时间轴动作"""
+        selected = self.timeline_tree.selection()
+        if not selected:
+            messagebox.showwarning("警告", "请先选择要移动的动作")
+            return
+        
+        index = self.timeline_tree.index(selected[0])
+        if index > 0:
+            # 交换位置
+            self.timeline_actions[index], self.timeline_actions[index - 1] = \
+                self.timeline_actions[index - 1], self.timeline_actions[index]
+            self.update_timeline_display()
+            # 重新选中移动后的项目
+            self.timeline_tree.selection_set(self.timeline_tree.get_children()[index - 1])
+            self.log_message("动作已上移")
+    
+    def move_timeline_down(self):
+        """下移选中的时间轴动作"""
+        selected = self.timeline_tree.selection()
+        if not selected:
+            messagebox.showwarning("警告", "请先选择要移动的动作")
+            return
+        
+        index = self.timeline_tree.index(selected[0])
+        if index < len(self.timeline_actions) - 1:
+            # 交换位置
+            self.timeline_actions[index], self.timeline_actions[index + 1] = \
+                self.timeline_actions[index + 1], self.timeline_actions[index]
+            self.update_timeline_display()
+            # 重新选中移动后的项目
+            self.timeline_tree.selection_set(self.timeline_tree.get_children()[index + 1])
+            self.log_message("动作已下移")
+    
+    def export_timeline_config(self):
+        """导出时间轴配置"""
+        try:
+            file_path = filedialog.asksaveasfilename(
+                title="导出时间轴配置",
+                defaultextension=".json",
+                filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")],
+                initialdir="configs"
+            )
+            
+            if file_path:
+                config = {
+                    'timeline_actions': self.timeline_actions,
+                    'retry_count': int(self.retry_count_var.get()),
+                    'retry_interval': float(self.retry_interval_var.get()),
+                    'export_time': time.strftime("%Y-%m-%d %H:%M:%S"),
+                    'description': f"时间轴配置 - {len(self.timeline_actions)}个动作, 重试{int(self.retry_count_var.get())}次"
+                }
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
+                
+                self.log_message(f"时间轴配置已导出: {file_path}")
+                
+        except Exception as e:
+            messagebox.showerror("错误", f"导出时间轴配置失败: {e}")
+            self.log_message(f"导出时间轴配置失败: {e}")
+    
+    def import_timeline_config(self):
+        """导入时间轴配置"""
+        try:
+            file_path = filedialog.askopenfilename(
+                title="导入时间轴配置",
+                filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")],
+                initialdir="configs"
+            )
+            
+            if file_path:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                # 验证配置格式
+                if 'timeline_actions' not in config:
+                    messagebox.showerror("错误", "配置文件格式错误：缺少timeline_actions字段")
+                    return
+                
+                # 验证时间轴动作格式
+                timeline_actions = config['timeline_actions']
+                if not isinstance(timeline_actions, list):
+                    messagebox.showerror("错误", "配置文件格式错误：timeline_actions必须是数组")
+                    return
+                
+                for i, action in enumerate(timeline_actions):
+                    if not isinstance(action, dict):
+                        messagebox.showerror("错误", f"配置文件格式错误：第{i+1}个动作格式错误")
+                        return
+                    
+                    required_fields = ['action', 'delay', 'description']
+                    for field in required_fields:
+                        if field not in action:
+                            messagebox.showerror("错误", f"配置文件格式错误：第{i+1}个动作缺少{field}字段")
+                            return
+                    
+                    # 验证delay是数字
+                    try:
+                        float(action['delay'])
+                    except (ValueError, TypeError):
+                        messagebox.showerror("错误", f"配置文件格式错误：第{i+1}个动作的delay必须是数字")
+                        return
+                
+                # 确认导入
+                if messagebox.askyesno("确认导入", f"将导入{len(timeline_actions)}个时间轴动作，是否继续？"):
+                    self.timeline_actions = timeline_actions
+                    self.update_timeline_display()
+                    
+                    # 导入重试配置
+                    if 'retry_count' in config:
+                        self.retry_count_var.set(str(config['retry_count']))
+                    if 'retry_interval' in config:
+                        self.retry_interval_var.set(str(config['retry_interval']))
+                    
+                    export_time = config.get('export_time', '未知时间')
+                    description = config.get('description', '无描述')
+                    retry_count = config.get('retry_count', '未设置')
+                    retry_interval = config.get('retry_interval', '未设置')
+                    self.log_message(f"时间轴配置已导入: {len(timeline_actions)}个动作, 重试{retry_count}次/{retry_interval}s (导出时间: {export_time})")
+                
+        except json.JSONDecodeError:
+            messagebox.showerror("错误", "配置文件格式错误：不是有效的JSON文件")
+        except Exception as e:
+            messagebox.showerror("错误", f"导入时间轴配置失败: {e}")
+            self.log_message(f"导入时间轴配置失败: {e}")
+    
+    def save_probability_config(self):
+        """保存概率配置"""
+        try:
+            config = {
+                'generation': int(self.generation_var.get()),
+                'judgment_count': int(self.judgment_count_var.get()),
+                'timestamp': time.time()
+            }
+            
+            filepath = filedialog.asksaveasfilename(
+                title="保存概率配置",
+                defaultextension=".json",
+                filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")],
+                initialdir="configs"
+            )
+            
+            if filepath:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
+                self.log_message(f"概率配置已保存到: {filepath}")
+                
+        except Exception as e:
+            self.logger.error(f"保存概率配置失败: {e}")
+            messagebox.showerror("错误", f"保存概率配置失败: {e}")
+    
+    def load_probability_config(self):
+        """加载概率配置"""
+        try:
+            filepath = filedialog.askopenfilename(
+                title="加载概率配置",
+                filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")],
+                initialdir="configs"
+            )
+            
+            if filepath:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                # 更新界面显示
+                self.generation_var.set(str(config.get('generation', 6)))
+                self.judgment_count_var.set(str(config.get('judgment_count', 1)))
+                
+                # 更新概率显示
+                self._update_probability_display()
+                
+                self.log_message(f"概率配置已加载: {filepath}")
+                
+        except Exception as e:
+            self.logger.error(f"加载概率配置失败: {e}")
+            messagebox.showerror("错误", f"加载概率配置失败: {e}")
+    
+    def reset_probability_config(self):
+        """重置概率配置"""
+        self.generation_var.set("6")
+        self.judgment_count_var.set("1")
+        self._update_probability_display()
+        self.log_message("概率配置已重置为默认值")
+    
+    def _update_threshold_display(self, value=None):
+        """更新阈值显示（保留两位小数）"""
+        self.color_sim_label.config(text=f"{self.color_sim_var.get():.2f}")
+        self.ssim_label.config(text=f"{self.ssim_var.get():.2f}")
+        self.color_diff_label.config(text=f"{self.color_diff_var.get():.2f}")
     
     def start_countdown(self, seconds, action):
         """开始倒计时"""
@@ -726,19 +1696,37 @@ class MainGUI:
             except ValueError:
                 return False
         
-        # 为每个输入框添加验证
-        self.initial_delay_var.trace('w', lambda *args: self._validate_input(
-            self.initial_delay_var, 1.0, 30.0, "初始延迟"))
-        self.f1_delay_var.trace('w', lambda *args: self._validate_input(
-            self.f1_delay_var, 0.1, 5.0, "F1后延迟"))
-        self.first_a_delay_var.trace('w', lambda *args: self._validate_input(
-            self.first_a_delay_var, 0.1, 5.0, "第一次A键后延迟"))
-        self.analysis_delay_var.trace('w', lambda *args: self._validate_input(
-            self.analysis_delay_var, 1.0, 20.0, "分析前延迟"))
+        # 为重试配置输入框添加验证
         self.retry_count_var.trace('w', lambda *args: self._validate_input(
             self.retry_count_var, 0, 5, "重试次数", is_int=True))
         self.retry_interval_var.trace('w', lambda *args: self._validate_input(
             self.retry_interval_var, 0.5, 10.0, "重试间隔"))
+    
+    def _update_probability_display(self, event=None):
+        """更新概率显示"""
+        try:
+            generation = int(self.generation_var.get())
+            judgment_count = int(self.judgment_count_var.get())
+            hunt_count = int(self.hunt_count_var.get())
+            
+            # 计算称号和概率
+            title, probability = self.probability_calculator.get_title_by_hunt_count(
+                generation, hunt_count, judgment_count
+            )
+            
+            # 更新显示
+            self.current_title_var.set(title)
+            self.current_probability_var.set(f"{probability:.2f}%")
+            
+            # 检查是否为欧皇中皇
+            if self.probability_calculator.is_ultra_lucky(generation, hunt_count, judgment_count):
+                self.current_title_var.set("欧皇中皇")
+                self.logger.info(f"检测到欧皇中皇！世代{generation}，刷闪{hunt_count}次，判定数{judgment_count}")
+                
+        except (ValueError, TypeError) as e:
+            self.logger.warning(f"概率计算失败: {e}")
+            self.current_title_var.set("计算错误")
+            self.current_probability_var.set("0.00%")
     
     def _validate_input(self, var, min_val, max_val, name, is_int=False):
         """验证输入值"""
@@ -775,17 +1763,54 @@ class MainGUI:
         try:
             imported_items = []
             
-            # 1. 导入参考图像
-            image_path = os.path.join(config_dir, "image.png")
-            if os.path.exists(image_path):
-                # 复制到参考图像目录，使用英文文件名
-                ref_image_path = os.path.join("configs", f"{config_name}_reference.png")
-                import shutil
-                shutil.copy2(image_path, ref_image_path)
+            # 清除现有的参考图像
+            self.app.image_analyzer.clear_references()
+            self.log_message("已清除现有参考图像")
+            
+            # 1. 导入配置目录下的所有图片作为参考图像
+            image_extensions = ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff']
+            image_files = []
+            
+            # 扫描配置目录下的所有图片文件（不包括子文件夹）
+            for file_name in os.listdir(config_dir):
+                if os.path.isfile(os.path.join(config_dir, file_name)):
+                    file_ext = os.path.splitext(file_name)[1].lower()
+                    if file_ext in image_extensions:
+                        image_files.append(file_name)
+            
+            if image_files:
+                # 确保configs目录存在
+                configs_dir = "configs"
+                if not os.path.exists(configs_dir):
+                    os.makedirs(configs_dir)
                 
-                # 加载参考图像，使用英文名称
-                self.app.image_analyzer.load_reference_image(f"{config_name}_reference", ref_image_path)
-                imported_items.append("参考图像")
+                imported_count = 0
+                for image_file in image_files:
+                    try:
+                        # 构建完整路径
+                        source_path = os.path.join(config_dir, image_file)
+                        
+                        # 生成参考图像名称（去掉扩展名）
+                        base_name = os.path.splitext(image_file)[0]
+                        ref_image_name = f"{config_name}_{base_name}"
+                        ref_image_path = os.path.join(configs_dir, f"{ref_image_name}.png")
+                        
+                        # 复制图片文件
+                        import shutil
+                        shutil.copy2(source_path, ref_image_path)
+                        
+                        # 加载参考图像
+                        self.app.image_analyzer.load_reference_image(ref_image_name, ref_image_path)
+                        imported_count += 1
+                        
+                    except Exception as e:
+                        self.logger.error(f"导入图片失败 {image_file}: {e}")
+                        continue
+                
+                if imported_count > 0:
+                    # 更新参考图像列表显示
+                    self.update_reference_list()
+                    imported_items.append(f"参考图像({imported_count}个)")
             
             # 2. 导入截图位置
             screenshot_path = os.path.join(config_dir, "screenshootposition.json")
@@ -803,23 +1828,26 @@ class MainGUI:
                         name = region_data['name']
                         self.app.screenshot_manager.add_region(name, region[0], region[1], region[2], region[3])
                 
+                # 更新截图区域列表显示
+                self.update_region_list()
                 imported_items.append("截图位置")
             
-            # 3. 导入定时设置
-            timer_path = os.path.join(config_dir, "timer.json")
-            if os.path.exists(timer_path):
-                with open(timer_path, 'r', encoding='utf-8') as f:
-                    timer_config = json.load(f)
+            # 3. 导入时间轴设置
+            timeline_path = os.path.join(config_dir, "timeline.json")
+            if os.path.exists(timeline_path):
+                with open(timeline_path, 'r', encoding='utf-8') as f:
+                    timeline_config = json.load(f)
                 
-                # 更新界面显示
-                self.initial_delay_var.set(str(timer_config.get('initial_delay', 5.0)))
-                self.f1_delay_var.set(str(timer_config.get('f1_delay', 0.5)))
-                self.first_a_delay_var.set(str(timer_config.get('first_a_delay', 0.8)))
-                self.analysis_delay_var.set(str(timer_config.get('analysis_delay', 4.0)))
-                self.retry_count_var.set(str(timer_config.get('retry_count', 2)))
-                self.retry_interval_var.set(str(timer_config.get('retry_interval', 2.0)))
+                # 加载时间轴配置
+                if 'timeline_actions' in timeline_config:
+                    self.timeline_actions = timeline_config['timeline_actions']
+                    self.update_timeline_display()
                 
-                imported_items.append("定时设置")
+                # 加载重试配置
+                self.retry_count_var.set(str(timeline_config.get('retry_count', 2)))
+                self.retry_interval_var.set(str(timeline_config.get('retry_interval', 2.0)))
+                
+                imported_items.append("时间轴设置")
             
             # 4. 导入阈值设置
             threshold_path = os.path.join(config_dir, "threshold.json")
@@ -832,12 +1860,22 @@ class MainGUI:
                 self.app.image_analyzer.set_ssim_threshold(threshold_config.get('ssim_threshold', 0.3))
                 self.app.image_analyzer.set_color_difference_threshold(threshold_config.get('color_difference', 30.0))
                 
+                # 更新阈值设置界面显示
+                thresholds = self.app.image_analyzer.get_thresholds()
+                self.color_sim_var.set(thresholds['color_similarity'])
+                self.ssim_var.set(thresholds['ssim_threshold'])
+                self.color_diff_var.set(thresholds['color_difference'])
+                self._update_threshold_display()
+                
                 imported_items.append("阈值设置")
             
             # 更新状态显示
             if imported_items:
                 self.import_status_var.set(f"成功导入: {', '.join(imported_items)}")
                 self.log_message(f"批量导入配置 '{config_name}' 成功: {', '.join(imported_items)}")
+                
+                # 提醒用户清理screenshots文件夹
+                self._ask_cleanup_screenshots()
             else:
                 self.import_status_var.set("未找到可导入的配置文件")
                 self.log_message(f"配置目录 '{config_dir}' 中未找到可导入的配置文件")
@@ -845,6 +1883,155 @@ class MainGUI:
         except Exception as e:
             self.import_status_var.set(f"导入失败: {e}")
             self.log_message(f"批量导入配置失败: {e}")
+    
+    def folder_import_config(self):
+        """从文件夹批量导入配置"""
+        try:
+            # 选择文件夹
+            folder_path = filedialog.askdirectory(
+                title="选择配置文件夹",
+                initialdir="configs"
+            )
+            
+            if not folder_path:
+                return
+            
+            self.folder_path_var.set(folder_path)
+            
+            imported_items = []
+            
+            # 清除现有的参考图像
+            self.app.image_analyzer.clear_references()
+            self.log_message("已清除现有参考图像")
+            
+            # 1. 导入文件夹下的所有图片作为参考图像
+            image_extensions = ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tiff']
+            image_files = []
+            
+            # 扫描文件夹下的所有图片文件（不包括子文件夹）
+            for file_name in os.listdir(folder_path):
+                if os.path.isfile(os.path.join(folder_path, file_name)):
+                    file_ext = os.path.splitext(file_name)[1].lower()
+                    if file_ext in image_extensions:
+                        image_files.append(file_name)
+            
+            if image_files:
+                # 确保configs目录存在
+                configs_dir = "configs"
+                if not os.path.exists(configs_dir):
+                    os.makedirs(configs_dir)
+                
+                imported_count = 0
+                for image_file in image_files:
+                    try:
+                        # 构建完整路径
+                        source_path = os.path.join(folder_path, image_file)
+                        
+                        # 生成参考图像名称（去掉扩展名）
+                        base_name = os.path.splitext(image_file)[0]
+                        ref_image_name = f"{os.path.basename(folder_path)}_{base_name}"
+                        ref_image_path = os.path.join(configs_dir, f"{ref_image_name}.png")
+                        
+                        # 复制图片文件
+                        shutil.copy2(source_path, ref_image_path)
+                        
+                        # 加载参考图像
+                        self.app.image_analyzer.load_reference_image(ref_image_name, ref_image_path)
+                        imported_count += 1
+                        
+                    except Exception as e:
+                        self.logger.error(f"导入图片失败 {image_file}: {e}")
+                        continue
+                
+                if imported_count > 0:
+                    # 更新参考图像列表显示
+                    self.update_reference_list()
+                    imported_items.append(f"参考图像({imported_count}个)")
+            
+            # 2. 导入截图位置
+            screenshot_path = os.path.join(folder_path, "screenshootposition.json")
+            if os.path.exists(screenshot_path):
+                with open(screenshot_path, 'r', encoding='utf-8') as f:
+                    screenshot_config = json.load(f)
+                
+                # 清除现有区域
+                self.app.screenshot_manager.clear_regions()
+                
+                # 添加新区域
+                for region_data in screenshot_config.get('regions', []):
+                    if region_data.get('enabled', True):
+                        region = region_data['region']
+                        name = region_data['name']
+                        self.app.screenshot_manager.add_region(name, region[0], region[1], region[2], region[3])
+                
+                # 更新截图区域列表显示
+                self.update_region_list()
+                imported_items.append("截图位置")
+            
+            # 3. 导入时间轴设置
+            timeline_path = os.path.join(folder_path, "timeline.json")
+            if os.path.exists(timeline_path):
+                with open(timeline_path, 'r', encoding='utf-8') as f:
+                    timeline_config = json.load(f)
+                
+                # 加载时间轴配置
+                if 'timeline_actions' in timeline_config:
+                    self.timeline_actions = timeline_config['timeline_actions']
+                    self.update_timeline_display()
+                
+                # 加载重试配置
+                self.retry_count_var.set(str(timeline_config.get('retry_count', 2)))
+                self.retry_interval_var.set(str(timeline_config.get('retry_interval', 2.0)))
+                
+                imported_items.append("时间轴设置")
+            
+            # 4. 导入阈值设置
+            threshold_path = os.path.join(folder_path, "threshold.json")
+            if os.path.exists(threshold_path):
+                with open(threshold_path, 'r', encoding='utf-8') as f:
+                    threshold_config = json.load(f)
+                
+                # 应用阈值设置
+                self.app.image_analyzer.set_color_similarity_threshold(threshold_config.get('color_similarity', 0.8))
+                self.app.image_analyzer.set_ssim_threshold(threshold_config.get('ssim_threshold', 0.3))
+                self.app.image_analyzer.set_color_difference_threshold(threshold_config.get('color_difference', 30.0))
+                
+                # 更新阈值设置界面显示
+                thresholds = self.app.image_analyzer.get_thresholds()
+                self.color_sim_var.set(thresholds['color_similarity'])
+                self.ssim_var.set(thresholds['ssim_threshold'])
+                self.color_diff_var.set(thresholds['color_difference'])
+                self._update_threshold_display()
+                
+                imported_items.append("阈值设置")
+            
+            # 5. 导入概率配置
+            gen_path = os.path.join(folder_path, "gen.json")
+            if os.path.exists(gen_path):
+                with open(gen_path, 'r', encoding='utf-8') as f:
+                    gen_config = json.load(f)
+                
+                # 更新概率配置
+                self.generation_var.set(str(gen_config.get('generation', 6)))
+                self.judgment_count_var.set(str(gen_config.get('judgment_count', 1)))
+                self._update_probability_display()
+                
+                imported_items.append("概率配置")
+            
+            # 更新状态显示
+            if imported_items:
+                self.import_status_var.set(f"成功导入: {', '.join(imported_items)}")
+                self.log_message(f"文件夹导入配置成功: {', '.join(imported_items)}")
+                
+                # 提醒用户清理screenshots文件夹
+                self._ask_cleanup_screenshots()
+            else:
+                self.import_status_var.set("未找到可导入的配置文件")
+                self.log_message(f"文件夹 '{folder_path}' 中未找到可导入的配置文件")
+                
+        except Exception as e:
+            self.import_status_var.set(f"导入失败: {e}")
+            self.log_message(f"文件夹导入配置失败: {e}")
     
     
     # 截图管理方法
@@ -931,6 +2118,52 @@ class MainGUI:
         """截图完成回调"""
         self.log_message(f"完成 {len(results)} 个区域的截图")
         # 这里可以添加截图后的处理逻辑
+    
+    def cleanup_screenshots(self):
+        """清理截图文件"""
+        try:
+            age_hours = int(self.cleanup_age_var.get())
+            keep_shiny = self.keep_shiny_var.get()
+            
+            if messagebox.askyesno("确认清理", 
+                                 f"将清理超过{age_hours}小时的截图文件\n"
+                                 f"保留闪光图片: {'是' if keep_shiny else '否'}\n"
+                                 f"是否继续？"):
+                
+                deleted, kept = self.app.screenshot_manager.cleanup_screenshots(
+                    keep_shiny=keep_shiny, 
+                    max_age_hours=age_hours
+                )
+                
+                self.log_message(f"截图清理完成: 删除{deleted}个文件, 保留{kept}个文件")
+                messagebox.showinfo("清理完成", f"删除{deleted}个文件, 保留{kept}个文件")
+                
+        except ValueError:
+            messagebox.showerror("错误", "请输入有效的保留时间（小时）")
+        except Exception as e:
+            self.logger.error(f"清理截图失败: {e}")
+            messagebox.showerror("错误", f"清理失败: {e}")
+    
+    def mark_shiny_images(self):
+        """标记闪光图片"""
+        try:
+            # 选择要标记为闪光的图片文件
+            file_paths = filedialog.askopenfilenames(
+                title="选择闪光图片",
+                filetypes=[("PNG图片", "*.png"), ("所有文件", "*.*")],
+                initialdir="screenshots"
+            )
+            
+            if file_paths:
+                for file_path in file_paths:
+                    self.app.screenshot_manager.mark_as_shiny(file_path)
+                
+                self.log_message(f"已标记{len(file_paths)}个图片为闪光图片")
+                messagebox.showinfo("标记完成", f"已标记{len(file_paths)}个图片为闪光图片")
+                
+        except Exception as e:
+            self.logger.error(f"标记闪光图片失败: {e}")
+            messagebox.showerror("错误", f"标记失败: {e}")
     
     def manual_capture(self):
         """手动截图"""
@@ -1023,13 +2256,10 @@ class MainGUI:
             self.log_message("截图失败，无法进行分析")
             return
         
-        # 获取第一个参考图像进行分析
-        reference_name = self.app.image_analyzer.get_reference_list()[0]
-        
-        # 分析每个截图
+        # 使用多参考图像进行分析
         analysis_results = []
         for result in results:
-            analysis = self.app.image_analyzer.analyze_image(result['image'], reference_name)
+            analysis = self.app.image_analyzer.analyze_image_multi_reference(result['image'])
             analysis['region_name'] = result['name']
             analysis_results.append(analysis)
         
@@ -1104,6 +2334,7 @@ class MainGUI:
             self.color_sim_var.set(thresholds['color_similarity'])
             self.ssim_var.set(thresholds['ssim_threshold'])
             self.color_diff_var.set(thresholds['color_difference'])
+            self._update_threshold_display()  # 更新显示标签
             self.log_message(f"设置已加载: {file_path}")
     
     # 通用方法
