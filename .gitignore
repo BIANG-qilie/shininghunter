@@ -37,6 +37,9 @@ configs/*.json
 configs/*.png
 configs/*.jpg
 
+# 音乐文件（可能包含版权信息）
+configs/music/
+
 # 打包文件
 dist/
 build/
